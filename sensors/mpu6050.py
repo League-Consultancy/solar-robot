@@ -1,52 +1,37 @@
-# sensors/mpu6050.py
-
-import smbus
+from smbus2 import SMBus
 import time
 
 
 class MPU6050:
-
-    # =========================================================
-    # MPU6050 REGISTERS
-    # =========================================================
+    ADDRESS = 0x68
 
     PWR_MGMT_1 = 0x6B
-
     SMPLRT_DIV = 0x19
     CONFIG = 0x1A
-
     GYRO_CONFIG = 0x1B
     ACCEL_CONFIG = 0x1C
+    WHO_AM_I = 0x75
 
     ACCEL_XOUT_H = 0x3B
 
-    TEMP_OUT_H = 0x41
-
-    GYRO_XOUT_H = 0x43
-
-    WHO_AM_I = 0x75
-
-    # =========================================================
-
-    def __init__(
-        self,
-        bus_number=1,
-        address=0x68
-    ):
-
+    def __init__(self, bus_number=1, address=0x68):
+        self.bus = SMBus(bus_number)
         self.address = address
 
-        self.bus = smbus.SMBus(
-            bus_number
+        # Check sensor
+        who_am_i = self.bus.read_byte_data(
+            self.address,
+            self.WHO_AM_I
         )
 
-    # =========================================================
-    # INITIALIZE
-    # =========================================================
+        print(f"MPU6050 WHO_AM_I: 0x{who_am_i:02X}")
 
-    def initialize(self):
+        if who_am_i != 0x68:
+            raise RuntimeError(
+                f"Unexpected MPU6050 ID: 0x{who_am_i:02X}"
+            )
 
-        # Wake MPU6050
+        # Wake up MPU6050
         self.bus.write_byte_data(
             self.address,
             self.PWR_MGMT_1,
@@ -55,209 +40,91 @@ class MPU6050:
 
         time.sleep(0.1)
 
-        # Sample rate divider
-        #
-        # Gyroscope output rate:
-        #
-        # 8 kHz / (1 + SMPLRT_DIV)
-        #
-        # With 7:
-        #
-        # 1000 Hz
-        #
-
+        # Sample rate
         self.bus.write_byte_data(
             self.address,
             self.SMPLRT_DIV,
             7
         )
 
-        # DLPF configuration
-        #
-        # 0x03 gives approximately
-        # 44 Hz gyro / 42 Hz accelerometer bandwidth
-        #
-
+        # Digital low-pass filter
         self.bus.write_byte_data(
             self.address,
             self.CONFIG,
             0x03
         )
 
-        # -----------------------------------------------------
-        # Gyroscope
-        #
-        # ±250 °/s
-        #
-        # FS_SEL = 0
-        # -----------------------------------------------------
-
+        # Gyroscope ±250 °/s
         self.bus.write_byte_data(
             self.address,
             self.GYRO_CONFIG,
             0x00
         )
 
-        # -----------------------------------------------------
-        # Accelerometer
-        #
-        # ±2g
-        #
-        # AFS_SEL = 0
-        # -----------------------------------------------------
-
+        # Accelerometer ±2g
         self.bus.write_byte_data(
             self.address,
             self.ACCEL_CONFIG,
             0x00
         )
 
-    # =========================================================
-    # WHO AM I
-    # =========================================================
+        print("MPU6050 initialized")
 
-    def who_am_i(self):
-
-        return self.bus.read_byte_data(
-            self.address,
-            self.WHO_AM_I
-        )
-
-    # =========================================================
-    # READ 16-BIT SIGNED VALUE
-    # =========================================================
-
-    def _read_word_signed(
-        self,
-        high_register
-    ):
-
+    def read_raw_data(self, register):
         high = self.bus.read_byte_data(
             self.address,
-            high_register
+            register
         )
 
         low = self.bus.read_byte_data(
             self.address,
-            high_register + 1
+            register + 1
         )
 
-        value = (
-            (high << 8) |
-            low
-        )
-
-        # Convert unsigned 16-bit
-        # to signed 16-bit
+        value = (high << 8) | low
 
         if value >= 32768:
-
             value -= 65536
 
         return value
 
-    # =========================================================
-    # ACCELEROMETER
-    # =========================================================
-
     def read_acceleration(self):
+        ax = self.read_raw_data(0x3B)
+        ay = self.read_raw_data(0x3D)
+        az = self.read_raw_data(0x3F)
 
-        raw_x = self._read_word_signed(
-            self.ACCEL_XOUT_H
+        return (
+            ax / 16384.0,
+            ay / 16384.0,
+            az / 16384.0
         )
-
-        raw_y = self._read_word_signed(
-            self.ACCEL_XOUT_H + 2
-        )
-
-        raw_z = self._read_word_signed(
-            self.ACCEL_XOUT_H + 4
-        )
-
-        # ±2g → 16384 LSB/g
-
-        ax = raw_x / 16384.0
-        ay = raw_y / 16384.0
-        az = raw_z / 16384.0
-
-        return ax, ay, az
-
-    # =========================================================
-    # GYROSCOPE
-    # =========================================================
 
     def read_gyroscope(self):
+        gx = self.read_raw_data(0x43)
+        gy = self.read_raw_data(0x45)
+        gz = self.read_raw_data(0x47)
 
-        raw_x = self._read_word_signed(
-            self.GYRO_XOUT_H
+        return (
+            gx / 131.0,
+            gy / 131.0,
+            gz / 131.0
         )
-
-        raw_y = self._read_word_signed(
-            self.GYRO_XOUT_H + 2
-        )
-
-        raw_z = self._read_word_signed(
-            self.GYRO_XOUT_H + 4
-        )
-
-        # ±250 °/s → 131 LSB/(°/s)
-
-        gx = raw_x / 131.0
-        gy = raw_y / 131.0
-        gz = raw_z / 131.0
-
-        return gx, gy, gz
-
-    # =========================================================
-    # TEMPERATURE
-    # =========================================================
 
     def read_temperature(self):
+        raw = self.read_raw_data(0x41)
 
-        raw_temp = self._read_word_signed(
-            self.TEMP_OUT_H
-        )
-
-        # MPU6050 temperature formula
-
-        temperature = (
-            raw_temp / 340.0
-        ) + 36.53
-
-        return temperature
-
-    # =========================================================
-    # READ EVERYTHING
-    # =========================================================
+        return (raw / 340.0) + 36.53
 
     def read_all(self):
-
-        ax, ay, az = self.read_acceleration()
-
-        gx, gy, gz = self.read_gyroscope()
-
-        temperature = self.read_temperature()
+        accel = self.read_acceleration()
+        gyro = self.read_gyroscope()
+        temp = self.read_temperature()
 
         return {
-            "accel": {
-                "x": ax,
-                "y": ay,
-                "z": az
-            },
-
-            "gyro": {
-                "x": gx,
-                "y": gy,
-                "z": gz
-            },
-
-            "temperature": temperature
+            "acceleration": accel,
+            "gyroscope": gyro,
+            "temperature": temp
         }
 
-    # =========================================================
-    # CLOSE
-    # =========================================================
-
     def close(self):
-
         self.bus.close()
