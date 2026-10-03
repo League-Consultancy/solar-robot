@@ -1,64 +1,36 @@
-# sensors/vl53l0x.py
+import time
 
 import board
 import busio
 import adafruit_vl53l0x
 
 
-class VL53L0X:
+class ToF:
+    def __init__(self):
+        # IMPORTANT:
+        # VL53L0X is connected to I2C0:
+        # GPIO8  -> SDA
+        # GPIO9  -> SCL
+        #
+        # On Raspberry Pi, bus 0 corresponds to /dev/i2c-0.
 
-    DEFAULT_ADDRESS = 0x29
-
-    def __init__(
-        self,
-        address=DEFAULT_ADDRESS
-    ):
-
-        # Raspberry Pi hardware I2C
         self.i2c = busio.I2C(
-            board.SCL,
-            board.SDA
+            board.SCL2,
+            board.SDA2
         )
 
-        # Create sensor
         self.sensor = adafruit_vl53l0x.VL53L0X(
             self.i2c,
-            address=address
+            address=0x29
         )
 
-    # =========================================================
-    # DISTANCE
-    # =========================================================
+        print("VL53L0X initialized on I2C0")
 
-    def read_distance_mm(self):
-
+    def read_distance(self):
+        """
+        Return distance in millimeters.
+        """
         return self.sensor.range
 
-    # =========================================================
-
-    def read_distance_cm(self):
-
-        return self.sensor.range / 10.0
-
-    # =========================================================
-
-    def read_distance_m(self):
-
-        return self.sensor.range / 1000.0
-
-    # =========================================================
-    # TIMING
-    # =========================================================
-
-    def set_timing_budget(self, microseconds):
-
-        self.sensor.measurement_timing_budget = microseconds
-
-    # =========================================================
-    # CLOSE
-    # =========================================================
-
     def close(self):
-
-        # Release I2C bus
         self.i2c.deinit()
