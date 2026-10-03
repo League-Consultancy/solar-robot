@@ -1,64 +1,50 @@
-# sensors/vl53l0x.py
+import time
 
 import board
 import busio
 import adafruit_vl53l0x
 
 
-class VL53L0X:
+class ToF:
+    def __init__(self):
+        # I2C0 on Raspberry Pi 5
+        #
+        # GPIO8  = SDA
+        # GPIO9  = SCL
+        #
+        # board.D8 -> GPIO8
+        # board.D9 -> GPIO9
 
-    DEFAULT_ADDRESS = 0x29
-
-    def __init__(
-        self,
-        address=DEFAULT_ADDRESS
-    ):
-
-        # Raspberry Pi hardware I2C
         self.i2c = busio.I2C(
-            board.SCL,
-            board.SDA
+            board.D5,   # SCL
+            board.D4    # SDA
         )
 
-        # Create sensor
+        # Wait for I2C bus to become available
+        while not self.i2c.try_lock():
+            time.sleep(0.01)
+
+        try:
+            devices = self.i2c.scan()
+            print(
+                "I2C devices:",
+                [hex(device) for device in devices]
+            )
+        finally:
+            self.i2c.unlock()
+
         self.sensor = adafruit_vl53l0x.VL53L0X(
             self.i2c,
-            address=address
+            address=0x29
         )
 
-    # =========================================================
-    # DISTANCE
-    # =========================================================
+        print("VL53L0X initialized")
 
-    def read_distance_mm(self):
-
+    def read_distance(self):
+        """
+        Returns distance in millimeters.
+        """
         return self.sensor.range
 
-    # =========================================================
-
-    def read_distance_cm(self):
-
-        return self.sensor.range / 10.0
-
-    # =========================================================
-
-    def read_distance_m(self):
-
-        return self.sensor.range / 1000.0
-
-    # =========================================================
-    # TIMING
-    # =========================================================
-
-    def set_timing_budget(self, microseconds):
-
-        self.sensor.measurement_timing_budget = microseconds
-
-    # =========================================================
-    # CLOSE
-    # =========================================================
-
     def close(self):
-
-        # Release I2C bus
         self.i2c.deinit()
