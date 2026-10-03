@@ -1,152 +1,60 @@
 from drivers.modbus_ascii import ModbusASCII
-from motors.rhino_motor import RhinoMotor
 
 
-PORT = "/dev/ttyAMA0"
-SLAVE_ID = 1
+MOTORS = {
+    "LEFT": {
+        "port": "/dev/ttyAMA0",
+        "id": 1,
+    },
+
+    "RIGHT": {
+        "port": "/dev/ttyAMA1",
+        "id": 1,
+    },
+
+    "BRUSH": {
+        "port": "/dev/ttyAMA4",
+        "id": 1,
+    },
+}
 
 
-uart = ModbusASCII(
-    port=PORT,
-    slave_id=SLAVE_ID
-)
+for name, config in MOTORS.items():
 
-motor = RhinoMotor(uart)
+    print("\n" + "=" * 40)
+    print(f"Testing {name}")
+    print(f"Port: {config['port']}")
+    print(f"Slave ID: {config['id']}")
+    print("=" * 40)
 
-motor.model = RhinoMotor.RMCS_2303
-
-
-try:
-
-    print()
-    print("======================================")
-    print("     INTERACTIVE WHEEL MOTOR TEST")
-    print("======================================")
-    print()
-    print("Commands:")
-    print()
-    print("  f <rpm>   Forward")
-    print("  r <rpm>   Reverse")
-    print("  s         Stop")
-    print("  v         Speed feedback")
-    print("  p         Position")
-    print("  h         Set home")
-    print("  q         Quit")
-    print()
-
-    while True:
-
-        command = input("> ").strip()
-
-        if not command:
-            continue
-
-        # -----------------------------------------
-        # FORWARD
-        # -----------------------------------------
-
-        if command.startswith("f "):
-
-            rpm = int(
-                command.split()[1]
-            )
-
-            motor.set_speed(
-                abs(rpm)
-            )
-
-            print(
-                f"Forward command: {abs(rpm)} RPM"
-            )
-
-        # -----------------------------------------
-        # REVERSE
-        # -----------------------------------------
-
-        elif command.startswith("r "):
-
-            rpm = int(
-                command.split()[1]
-            )
-
-            motor.set_speed(
-                -abs(rpm)
-            )
-
-            print(
-                f"Reverse command: {abs(rpm)} RPM"
-            )
-
-        # -----------------------------------------
-        # STOP
-        # -----------------------------------------
-
-        elif command == "s":
-
-            motor.stop()
-
-            print("Motor stopped.")
-
-        # -----------------------------------------
-        # SPEED FEEDBACK
-        # -----------------------------------------
-
-        elif command == "v":
-
-            speed = motor.get_speed_feedback()
-
-            print(
-                f"Speed feedback: {speed} RPM"
-            )
-
-        # -----------------------------------------
-        # POSITION
-        # -----------------------------------------
-
-        elif command == "p":
-
-            position = motor.get_position()
-
-            print(
-                f"Position: {position}"
-            )
-
-        # -----------------------------------------
-        # HOME
-        # -----------------------------------------
-
-        elif command == "h":
-
-            motor.set_home()
-
-            print("Home position set.")
-
-        # -----------------------------------------
-        # QUIT
-        # -----------------------------------------
-
-        elif command == "q":
-
-            motor.stop()
-
-            print("Motor stopped.")
-            print("Exiting.")
-
-            break
-
-        else:
-
-            print("Unknown command.")
-
-except KeyboardInterrupt:
-
-    print("\nStopping motor...")
+    driver = None
 
     try:
-        motor.stop()
-    except:
-        pass
+        driver = ModbusASCII(
+            port=config["port"],
+            slave_id=config["id"],
+            baudrate=9600,
+            timeout=0.5,
+        )
 
-finally:
+        # Register 1 = slave address
+        response = driver.read_registers(
+            1,
+            1
+        )
 
-    uart.close()
+        print(f"Slave ID response: {response}")
+
+        if response[0] == config["id"]:
+            print("✓ Communication OK")
+        else:
+            print(
+                f"✗ Unexpected ID: {response[0]}"
+            )
+
+    except Exception as e:
+        print(f"✗ Communication FAILED: {e}")
+
+    finally:
+        if driver:
+            driver.close()
