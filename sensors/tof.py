@@ -1,50 +1,41 @@
+from smbus2 import SMBus
 import time
-
-import board
-import busio
-import adafruit_vl53l0x
 
 
 class ToF:
-    def __init__(self):
-        # I2C0 on Raspberry Pi 5
-        #
-        # GPIO8  = SDA
-        # GPIO9  = SCL
-        #
-        # board.D8 -> GPIO8
-        # board.D9 -> GPIO9
+    ADDRESS = 0x29
 
-        self.i2c = busio.I2C(
-            board.D5,   # SCL
-            board.D4    # SDA
-        )
+    def __init__(self, bus_number=2):
+        self.bus = SMBus(bus_number)
 
-        # Wait for I2C bus to become available
-        while not self.i2c.try_lock():
-            time.sleep(0.01)
+        print(f"Opening /dev/i2c-{bus_number}")
 
+        # Read VL53L0X identification registers
         try:
-            devices = self.i2c.scan()
-            print(
-                "I2C devices:",
-                [hex(device) for device in devices]
+            model_id = self.bus.read_byte_data(
+                self.ADDRESS,
+                0xC0
             )
-        finally:
-            self.i2c.unlock()
 
-        self.sensor = adafruit_vl53l0x.VL53L0X(
-            self.i2c,
-            address=0x29
-        )
+            module_type = self.bus.read_byte_data(
+                self.ADDRESS,
+                0xC1
+            )
 
-        print("VL53L0X initialized")
+            revision_id = self.bus.read_byte_data(
+                self.ADDRESS,
+                0xC2
+            )
 
-    def read_distance(self):
-        """
-        Returns distance in millimeters.
-        """
-        return self.sensor.range
+            print(f"Model ID:    0x{model_id:02X}")
+            print(f"Module type: 0x{module_type:02X}")
+            print(f"Revision ID: 0x{revision_id:02X}")
+
+        except Exception as e:
+            self.bus.close()
+            raise RuntimeError(
+                f"VL53L0X communication failed: {e}"
+            )
 
     def close(self):
-        self.i2c.deinit()
+        self.bus.close()

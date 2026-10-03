@@ -1,19 +1,8 @@
 from sensors.tof import ToF
-import time
 
 
-tof = ToF()
+tof = ToF(bus_number=2)
 
-try:
-    while True:
-        distance = tof.read_distance()
+tof.close()
 
-        print(f"Distance: {distance} mm")
-
-        time.sleep(0.2)
-
-except KeyboardInterrupt:
-    print("\nStopping...")
-
-finally:
-    tof.close()
+print("VL53L0X I2C communication OK")
