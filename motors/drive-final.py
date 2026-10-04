@@ -220,8 +220,8 @@ class SolarRobot:
 
         time.sleep(DIRECTION_CHANGE_DELAY)
 
-        frame1 = self.motor1.ccw_frame()
-        frame2 = self.motor2.ccw_frame()
+        frame1 = self.motor1.cw_frame()
+        frame2 = self.motor2.cw_frame()
 
         send_simultaneous(
             self.motor1,
@@ -230,8 +230,8 @@ class SolarRobot:
             frame2
         )
 
-        self.motor1.direction = "ccw"
-        self.motor2.direction = "ccw"
+        self.motor1.direction = "cw"
+        self.motor2.direction = "cw"
 
     # ========================================================
     # RIGHT
@@ -245,8 +245,8 @@ class SolarRobot:
 
         time.sleep(DIRECTION_CHANGE_DELAY)
 
-        frame1 = self.motor1.cw_frame()
-        frame2 = self.motor2.cw_frame()
+        frame1 = self.motor1.ccw_frame()
+        frame2 = self.motor2.ccw_frame()
 
         send_simultaneous(
             self.motor1,
@@ -255,8 +255,8 @@ class SolarRobot:
             frame2
         )
 
-        self.motor1.direction = "cw"
-        self.motor2.direction = "cw"
+        self.motor1.direction = "ccw"
+        self.motor2.direction = "ccw"
 
     # ========================================================
     # STOP BOTH SIMULTANEOUSLY
