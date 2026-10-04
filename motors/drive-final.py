@@ -1,9 +1,10 @@
 import serial
 import time
+import threading
 
 
 # ============================================================
-# CONFIGURATION
+# CONFIG
 # ============================================================
 
 MOTOR1_PORT = "/dev/ttyAMA0"
@@ -25,10 +26,10 @@ def lrc(data):
     return (-sum(data)) & 0xFF
 
 
-def make_frame(slave, register, value):
+def make_frame(register, value):
 
     data = bytes([
-        slave,
+        SLAVE_ID,
         0x06,
         (register >> 8) & 0xFF,
         register & 0xFF,
@@ -62,127 +63,82 @@ class Motor:
             bytesize=8,
             parity=serial.PARITY_NONE,
             stopbits=1,
-            timeout=0.5
+            timeout=0.1,
+            write_timeout=0.1
         )
 
         self.direction = None
 
-        time.sleep(0.1)
-
     # --------------------------------------------------------
-    # WRITE REGISTER
+    # SEND RAW FRAME
     # --------------------------------------------------------
 
-    def write(self, register, value):
-
-        frame = make_frame(
-            SLAVE_ID,
-            register,
-            value
-        )
+    def send(self, frame):
 
         self.ser.write(frame)
         self.ser.flush()
 
-        time.sleep(0.03)
-
-        # Clear/read response
-        self.ser.read_all()
-
     # --------------------------------------------------------
-    # SPEED
+    # SET SPEED
     # --------------------------------------------------------
 
     def set_speed(self, speed):
 
-        self.write(14, abs(int(speed)))
+        frame = make_frame(14, abs(int(speed)))
+        self.send(frame)
 
     # --------------------------------------------------------
-    # RAW CW
+    # COMMAND FRAMES
     # --------------------------------------------------------
 
-    def _cw(self):
+    def cw_frame(self):
 
-        # 0101 = Digital mode + CW + Enable
-        self.write(2, 0x0101)
+        return make_frame(2, 0x0101)
 
-        self.direction = "cw"
+    def ccw_frame(self):
 
-    # --------------------------------------------------------
-    # RAW CCW
-    # --------------------------------------------------------
+        return make_frame(2, 0x0109)
 
-    def _ccw(self):
-
-        # 0109 = Digital mode + CCW + Enable
-        self.write(2, 0x0109)
-
-        self.direction = "ccw"
-
-    # --------------------------------------------------------
-    # STOP CURRENT DIRECTION
-    # --------------------------------------------------------
-
-    def stop(self):
+    def stop_frame(self):
 
         if self.direction == "cw":
 
-            # 0100 = Disable CW
-            self.write(2, 0x0100)
+            return make_frame(2, 0x0100)
 
         elif self.direction == "ccw":
 
-            # 0108 = Disable CCW
-            self.write(2, 0x0108)
+            return make_frame(2, 0x0108)
 
-        self.direction = None
+        return None
 
-        time.sleep(DIRECTION_CHANGE_DELAY)
 
-    # --------------------------------------------------------
-    # SET CW
-    # --------------------------------------------------------
+# ============================================================
+# SEND TO TWO MOTORS AT THE SAME TIME
+# ============================================================
 
-    def cw(self):
+def send_simultaneous(motor1, frame1, motor2, frame2):
 
-        # If already CW, nothing to change
-        if self.direction == "cw":
-            return
+    """
+    Send commands to both UARTs concurrently.
+    """
 
-        # If running CCW, disable CCW first
-        if self.direction == "ccw":
-            self.stop()
+    thread1 = threading.Thread(
+        target=motor1.send,
+        args=(frame1,)
+    )
 
-        self._cw()
+    thread2 = threading.Thread(
+        target=motor2.send,
+        args=(frame2,)
+    )
 
-    # --------------------------------------------------------
-    # SET CCW
-    # --------------------------------------------------------
+    # Start both threads as close together as possible
+    thread1.start()
+    thread2.start()
 
-    def ccw(self):
-
-        # If already CCW, nothing to change
-        if self.direction == "ccw":
-            return
-
-        # If running CW, disable CW first
-        if self.direction == "cw":
-            self.stop()
-
-        self._ccw()
-
-    # --------------------------------------------------------
-    # CLOSE
-    # --------------------------------------------------------
-
-    def close(self):
-
-        try:
-            self.stop()
-        except:
-            pass
-
-        self.ser.close()
+    # Wait until both transmissions finish
+    thread1.join()
+    thread2.join()
 
 
 # ============================================================
@@ -198,12 +154,11 @@ class SolarRobot:
         self.motor1 = Motor(MOTOR1_PORT)
         self.motor2 = Motor(MOTOR2_PORT)
 
-        # Configure speed
+        # Set speed
         self.motor1.set_speed(SPEED)
         self.motor2.set_speed(SPEED)
 
         print("Robot ready.")
-        print(f"Speed: {SPEED}")
 
     # ========================================================
     # FORWARD
@@ -213,13 +168,18 @@ class SolarRobot:
 
         print("FORWARD")
 
-        # Tested physical mapping:
-        #
-        # M1 = CW
-        # M2 = CCW
+        frame1 = self.motor1.cw_frame()
+        frame2 = self.motor2.ccw_frame()
 
-        self.motor1.cw()
-        self.motor2.ccw()
+        send_simultaneous(
+            self.motor1,
+            frame1,
+            self.motor2,
+            frame2
+        )
+
+        self.motor1.direction = "cw"
+        self.motor2.direction = "ccw"
 
     # ========================================================
     # REVERSE
@@ -229,11 +189,24 @@ class SolarRobot:
 
         print("REVERSE")
 
-        # M1 = CCW
-        # M2 = CW
+        # First stop both motors simultaneously
+        self.stop()
 
-        self.motor1.ccw()
-        self.motor2.cw()
+        # Allow drive to settle
+        time.sleep(DIRECTION_CHANGE_DELAY)
+
+        frame1 = self.motor1.ccw_frame()
+        frame2 = self.motor2.cw_frame()
+
+        send_simultaneous(
+            self.motor1,
+            frame1,
+            self.motor2,
+            frame2
+        )
+
+        self.motor1.direction = "ccw"
+        self.motor2.direction = "cw"
 
     # ========================================================
     # LEFT
@@ -243,11 +216,22 @@ class SolarRobot:
 
         print("LEFT")
 
-        # M1 = CCW
-        # M2 = CCW
+        self.stop()
 
-        self.motor1.ccw()
-        self.motor2.ccw()
+        time.sleep(DIRECTION_CHANGE_DELAY)
+
+        frame1 = self.motor1.ccw_frame()
+        frame2 = self.motor2.ccw_frame()
+
+        send_simultaneous(
+            self.motor1,
+            frame1,
+            self.motor2,
+            frame2
+        )
+
+        self.motor1.direction = "ccw"
+        self.motor2.direction = "ccw"
 
     # ========================================================
     # RIGHT
@@ -257,22 +241,55 @@ class SolarRobot:
 
         print("RIGHT")
 
-        # M1 = CW
-        # M2 = CW
+        self.stop()
 
-        self.motor1.cw()
-        self.motor2.cw()
+        time.sleep(DIRECTION_CHANGE_DELAY)
+
+        frame1 = self.motor1.cw_frame()
+        frame2 = self.motor2.cw_frame()
+
+        send_simultaneous(
+            self.motor1,
+            frame1,
+            self.motor2,
+            frame2
+        )
+
+        self.motor1.direction = "cw"
+        self.motor2.direction = "cw"
 
     # ========================================================
-    # STOP
+    # STOP BOTH SIMULTANEOUSLY
     # ========================================================
 
     def stop(self):
 
-        print("STOP")
+        frame1 = self.motor1.stop_frame()
+        frame2 = self.motor2.stop_frame()
 
-        self.motor1.stop()
-        self.motor2.stop()
+        if frame1 is None and frame2 is None:
+            return
+
+        # If one motor has no direction, send only to the other
+        if frame1 is None:
+
+            self.motor2.send(frame2)
+
+        elif frame2 is None:
+
+            self.motor1.send(frame1)
+
+        else:
+
+            send_simultaneous(
+                self.motor1,
+                frame1,
+                self.motor2,
+                frame2
+            )
+
+        self.motor1.direction = None
+        self.motor2.direction = None
 
     # ========================================================
     # CLOSE
@@ -282,8 +299,8 @@ class SolarRobot:
 
         self.stop()
 
-        self.motor1.close()
-        self.motor2.close()
+        self.motor1.ser.close()
+        self.motor2.ser.close()
 
 
 # ============================================================
@@ -297,9 +314,9 @@ try:
     robot = SolarRobot()
 
     print()
-    print("================================")
-    print(" SOLAR ROBOT CONTROL")
-    print("================================")
+    print("==============================")
+    print(" SOLAR ROBOT")
+    print("==============================")
     print()
     print("1 = Forward")
     print("2 = Reverse")
