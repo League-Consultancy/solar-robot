@@ -4,17 +4,17 @@ from drivers.modbus_ascii import ModbusASCII
 MOTORS = {
     "LEFT": {
         "port": "/dev/ttyAMA0",
-        "id": 1,
+        "id": 11,
     },
 
     "RIGHT": {
         "port": "/dev/ttyAMA1",
-        "id": 1,
+        "id": 11,
     },
 
     "BRUSH": {
         "port": "/dev/ttyAMA4",
-        "id": 1,
+        "id": 11,
     },
 }
 

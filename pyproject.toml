@@ -6,5 +6,10 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "opencv-python",
-    "numpy"
+    "numpy",
+    "pyserial",
+    "smbus2",
+    "adafruit-blinka",
+    "adafruit-circuitpython-vl53l0x",
+    "adafruit-lgpio",
 ]
