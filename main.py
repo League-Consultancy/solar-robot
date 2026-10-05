@@ -6,6 +6,7 @@ from motors.drive_final import SolarRobot
 from motors.brush_final import RMCS2304Motor
 from sensors.mpu6050 import MPU6050
 from sensors.tof import ToF
+from sensors.relay import PumpRelay
 
 
 # ============================================================
@@ -28,6 +29,8 @@ brush = RMCS2304Motor(
     slave_id=7,
     baudrate=9600
 )
+
+pump = PumpRelay(pin=17)
 
 brush.set_speed(2048)
 
@@ -59,6 +62,7 @@ sensor_lock = threading.Lock()
 
 current_command = "stop"
 brush_state = False
+pump_state = True
 
 # ============================================================
 # SENSOR DATA
@@ -257,6 +261,46 @@ def brush_off():
 # ============================================================
 # SENSOR DATA
 # ============================================================
+
+@app.route("/pump/on", methods=["POST"])
+def pump_on():
+    global pump_state
+
+    try:
+        # Relay is already ON after initialization.
+        pump.start()
+        pump_state = True
+
+        return jsonify({
+            "success": True,
+            "pump": True
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/pump/off", methods=["POST"])
+def pump_off():
+    global pump_state
+
+    try:
+        pump.stop()
+        pump_state = False
+
+        return jsonify({
+            "success": True,
+            "pump": False
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 @app.route("/sensors")
 def sensors():

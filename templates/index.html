@@ -456,6 +456,19 @@ body {
     </button>
 </div>
 
+    <div class="device-control">
+    <span>Pump</span>
+
+    <button id="pumpSwitch"
+            class="switch on"
+            type="button"
+            aria-pressed="true">
+
+        <span class="switch-knob"></span>
+
+    </button>
+</div>
+
     <div
         id="status"
         class="status"
@@ -613,6 +626,44 @@ brushSwitch.addEventListener("click", async () => {
     }
 });
 
+const pumpSwitch = document.getElementById("pumpSwitch");
+
+let pumpOn = true;
+
+pumpSwitch.addEventListener("click", async () => {
+
+    const newState = !pumpOn;
+
+    try {
+
+        const response = await fetch(
+            newState ? "/pump/on" : "/pump/off",
+            {
+                method: "POST"
+            }
+        );
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || "Pump command failed");
+        }
+
+        pumpOn = data.pump;
+
+        pumpSwitch.classList.toggle("on", pumpOn);
+
+        pumpSwitch.setAttribute(
+            "aria-pressed",
+            pumpOn ? "true" : "false"
+        );
+
+    } catch (error) {
+
+        console.error("Pump error:", error);
+
+    }
+});
 
 /* =========================================================
    TOUCH / MOUSE EVENTS
