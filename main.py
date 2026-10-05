@@ -30,8 +30,6 @@ brush = RMCS2304Motor(
     baudrate=9600
 )
 
-pump = PumpRelay(pin=17)
-
 brush.set_speed(2048)
 
 print("Initializing MPU6050...")
@@ -268,7 +266,7 @@ def pump_on():
 
     try:
         # Relay is already ON after initialization.
-        pump.start()
+        pump = PumpRelay(pin=17)
         pump_state = True
 
         return jsonify({
