@@ -3,6 +3,7 @@ import threading
 import time
 
 from motors.drive_final import SolarRobot
+from motors.brush_final import RMCS2304Motor
 from sensors.mpu6050 import MPU6050
 from sensors.tof import ToF
 
@@ -21,6 +22,14 @@ app = Flask(__name__)
 print("Initializing robot...")
 
 robot = SolarRobot()
+
+brush = RMCS2304Motor(
+    port="/dev/ttyAMA1",
+    slave_id=7,
+    baudrate=9600
+)
+
+brush.set_speed(2048)
 
 print("Initializing MPU6050...")
 
@@ -49,7 +58,7 @@ sensor_lock = threading.Lock()
 # ============================================================
 
 current_command = "stop"
-
+brush_state = False
 
 # ============================================================
 # SENSOR DATA
@@ -206,6 +215,44 @@ def drive(command):
             current_command
     })
 
+@app.route("/brush/on", methods=["POST"])
+def brush_on():
+    global brush_state
+
+    try:
+        brush.start()
+        brush_state = True
+
+        return jsonify({
+            "success": True,
+            "brush": True
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/brush/off", methods=["POST"])
+def brush_off():
+    global brush_state
+
+    try:
+        brush.stop()
+        brush_state = False
+
+        return jsonify({
+            "success": True,
+            "brush": False
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 # ============================================================
 # SENSOR DATA
