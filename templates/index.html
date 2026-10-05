@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,
+             initial-scale=1.0,
+             maximum-scale=1.0,
+             user-scalable=no"
+>
+
+<title>Solar Robot</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+
+    margin: 0;
+    padding: 0;
+
+    width: 100%;
+    height: 100%;
+
+    overflow: hidden;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    background: #111;
+    color: white;
+
+    touch-action: none;
+}
+
+
+/* =========================================================
+   MAIN
+   ========================================================= */
+
+.container {
+
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+    flex-direction: column;
+
+    position: relative;
+}
+
+
+/* =========================================================
+   SENSOR FLOATING WINDOW
+   ========================================================= */
+
+.sensor-panel {
+
+    position: absolute;
+
+    top: 15px;
+    left: 15px;
+
+    width: 220px;
+
+    background: rgba(20,20,20,0.90);
+
+    border-radius: 15px;
+
+    padding: 14px;
+
+    z-index: 100;
+
+    box-shadow:
+        0 5px 20px rgba(0,0,0,0.4);
+
+    backdrop-filter: blur(10px);
+}
+
+.sensor-title {
+
+    font-size: 15px;
+
+    font-weight: bold;
+
+    margin-bottom: 8px;
+}
+
+.sensor-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    font-size: 13px;
+
+    margin: 4px 0;
+}
+
+.sensor-section {
+
+    margin-top: 8px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid #333;
+}
+
+.sensor-label {
+
+    color: #999;
+}
+
+.sensor-value {
+
+    font-family: monospace;
+}
+
+
+/* =========================================================
+   MOVEMENT AREA
+   ========================================================= */
+
+.controls {
+
+    width: 100%;
+    height: 100%;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+}
+
+
+/* =========================================================
+   D-PAD
+   ========================================================= */
+
+.dpad {
+
+    width: min(85vw, 360px);
+    height: min(85vw, 360px);
+
+    display: grid;
+
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+
+    gap: 12px;
+}
+
+
+.button {
+
+    border: none;
+
+    border-radius: 25px;
+
+    background: #2a2a2a;
+
+    color: white;
+
+    font-size: 42px;
+
+    display: flex;
+
+    align-items: center;
+    justify-content: center;
+
+    user-select: none;
+
+    -webkit-user-select: none;
+
+    touch-action: none;
+
+    transition:
+        transform 0.05s,
+        background 0.05s;
+}
+
+
+.button:active {
+
+    transform: scale(0.94);
+
+    background: #555;
+}
+
+
+.button.active {
+
+    background: #666;
+
+    transform: scale(0.94);
+}
+
+
+.forward {
+
+    grid-column: 2;
+    grid-row: 1;
+}
+
+
+.left {
+
+    grid-column: 1;
+    grid-row: 2;
+}
+
+
+.right {
+
+    grid-column: 3;
+    grid-row: 2;
+}
+
+
+.backward {
+
+    grid-column: 2;
+    grid-row: 3;
+}
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+.status {
+
+    position: absolute;
+
+    bottom: 15px;
+
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    padding: 8px 18px;
+
+    background: rgba(20,20,20,0.9);
+
+    border-radius: 20px;
+
+    font-size: 13px;
+
+    color: #aaa;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+    <!-- ================================================
+         SENSOR WINDOW
+         ================================================ -->
+
+    <div class="sensor-panel">
+
+        <div class="sensor-title">
+            ROBOT SENSORS
+        </div>
+
+
+        <div class="sensor-section">
+
+            <div class="sensor-row">
+                <span class="sensor-label">AX</span>
+                <span id="ax" class="sensor-value">--</span>
+            </div>
+
+            <div class="sensor-row">
+                <span class="sensor-label">AY</span>
+                <span id="ay" class="sensor-value">--</span>
+            </div>
+
+            <div class="sensor-row">
+                <span class="sensor-label">AZ</span>
+                <span id="az" class="sensor-value">--</span>
+            </div>
+
+        </div>
+
+
+        <div class="sensor-section">
+
+            <div class="sensor-row">
+                <span class="sensor-label">GX</span>
+                <span id="gx" class="sensor-value">--</span>
+            </div>
+
+            <div class="sensor-row">
+                <span class="sensor-label">GY</span>
+                <span id="gy" class="sensor-value">--</span>
+            </div>
+
+            <div class="sensor-row">
+                <span class="sensor-label">GZ</span>
+                <span id="gz" class="sensor-value">--</span>
+            </div>
+
+        </div>
+
+
+        <div class="sensor-section">
+
+            <div class="sensor-row">
+
+                <span class="sensor-label">
+                    TOF
+                </span>
+
+                <span
+                    id="tof"
+                    class="sensor-value"
+                >
+                    -- mm
+                </span>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================
+         CONTROLS
+         ================================================ -->
+
+    <div class="controls">
+
+        <div class="dpad">
+
+
+            <button
+                class="button forward"
+                data-command="forward"
+            >
+                ▲
+            </button>
+
+
+            <button
+                class="button left"
+                data-command="left"
+            >
+                ◀
+            </button>
+
+
+            <button
+                class="button right"
+                data-command="right"
+            >
+                ▶
+            </button>
+
+
+            <button
+                class="button backward"
+                data-command="backward"
+            >
+                ▼
+            </button>
+
+
+        </div>
+
+    </div>
+
+
+    <div
+        id="status"
+        class="status"
+    >
+        STOPPED
+    </div>
+
+
+</div>
+
+
+<script>
+
+
+/* =========================================================
+   DRIVE CONTROL
+   ========================================================= */
+
+let activeButton = null;
+let activeCommand = null;
+
+
+/*
+ * Send command to Flask
+ */
+
+function sendCommand(command) {
+
+    fetch(
+        "/drive/" + command,
+        {
+            method: "POST"
+        }
+    )
+    .catch(
+        error => {
+            console.error(error);
+        }
+    );
+}
+
+
+/*
+ * START MOVEMENT
+ */
+
+function startMovement(button) {
+
+    /*
+     * IMPORTANT:
+     *
+     * If another button is already active,
+     * ignore this press.
+     *
+     * This guarantees:
+     *
+     * forward + left
+     *
+     * cannot happen simultaneously.
+     */
+
+    if (activeButton !== null) {
+        return;
+    }
+
+
+    activeButton = button;
+
+    activeCommand =
+        button.dataset.command;
+
+
+    button.classList.add("active");
+
+
+    sendCommand(
+        activeCommand
+    );
+
+
+    document
+        .getElementById("status")
+        .innerText =
+        activeCommand.toUpperCase();
+}
+
+
+/*
+ * STOP MOVEMENT
+ */
+
+function stopMovement(button) {
+
+    /*
+     * Only the currently active button
+     * is allowed to stop the robot.
+     */
+
+    if (button !== activeButton) {
+        return;
+    }
+
+
+    button.classList.remove("active");
+
+
+    activeButton = null;
+    activeCommand = null;
+
+
+    sendCommand("stop");
+
+
+    document
+        .getElementById("status")
+        .innerText =
+        "STOPPED";
+}
+
+
+/* =========================================================
+   TOUCH / MOUSE EVENTS
+   ========================================================= */
+
+const buttons =
+    document.querySelectorAll(".button");
+
+
+buttons.forEach(
+    button => {
+
+
+        /*
+         * TOUCH / POINTER DOWN
+         */
+
+        button.addEventListener(
+            "pointerdown",
+            event => {
+
+                event.preventDefault();
+
+                button.setPointerCapture(
+                    event.pointerId
+                );
+
+                startMovement(button);
+            }
+        );
+
+
+        /*
+         * POINTER UP
+         */
+
+        button.addEventListener(
+            "pointerup",
+            event => {
+
+                event.preventDefault();
+
+                stopMovement(button);
+            }
+        );
+
+
+        /*
+         * POINTER CANCEL
+         */
+
+        button.addEventListener(
+            "pointercancel",
+            event => {
+
+                event.preventDefault();
+
+                stopMovement(button);
+            }
+        );
+
+
+        /*
+         * POINTER LEAVES BUTTON
+         *
+         * Important for safety.
+         */
+
+        button.addEventListener(
+            "pointerleave",
+            event => {
+
+                if (
+                    event.buttons === 0
+                ) {
+
+                    stopMovement(button);
+                }
+            }
+        );
+
+    }
+);
+
+
+/* =========================================================
+   EXTRA SAFETY
+   ========================================================= */
+
+/*
+ * If browser loses focus,
+ * stop the robot.
+ */
+
+window.addEventListener(
+    "blur",
+    () => {
+
+        if (activeButton !== null) {
+
+            activeButton
+                .classList
+                .remove("active");
+
+            activeButton = null;
+            activeCommand = null;
+
+            sendCommand("stop");
+
+            document
+                .getElementById("status")
+                .innerText =
+                "STOPPED";
+        }
+
+    }
+);
+
+
+/*
+ * If page is hidden,
+ * stop the robot.
+ */
+
+document.addEventListener(
+    "visibilitychange",
+    () => {
+
+        if (
+            document.hidden &&
+            activeButton !== null
+        ) {
+
+            activeButton
+                .classList
+                .remove("active");
+
+            activeButton = null;
+            activeCommand = null;
+
+            sendCommand("stop");
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   SENSOR UPDATE
+   ========================================================= */
+
+async function updateSensors() {
+
+    try {
+
+        const response =
+            await fetch("/sensors");
+
+
+        const data =
+            await response.json();
+
+
+        /*
+         * IMU
+         */
+
+        document
+            .getElementById("ax")
+            .innerText =
+            Number(data.imu.ax)
+                .toFixed(2);
+
+        document
+            .getElementById("ay")
+            .innerText =
+            Number(data.imu.ay)
+                .toFixed(2);
+
+        document
+            .getElementById("az")
+            .innerText =
+            Number(data.imu.az)
+                .toFixed(2);
+
+
+        document
+            .getElementById("gx")
+            .innerText =
+            Number(data.imu.gx)
+                .toFixed(2);
+
+        document
+            .getElementById("gy")
+            .innerText =
+            Number(data.imu.gy)
+                .toFixed(2);
+
+        document
+            .getElementById("gz")
+            .innerText =
+            Number(data.imu.gz)
+                .toFixed(2);
+
+
+        /*
+         * TOF
+         */
+
+        document
+            .getElementById("tof")
+            .innerText =
+            Number(data.tof.distance)
+                .toFixed(0)
+            + " mm";
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Sensor error:",
+            error
+        );
+
+    }
+
+}
+
+
+/*
+ * Update sensors 10 times/sec
+ */
+
+setInterval(
+    updateSensors,
+    100
+);
+
+
+updateSensors();
+
+
+</script>
+
+
+</body>
+
+</html>

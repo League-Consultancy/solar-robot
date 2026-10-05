@@ -267,27 +267,12 @@ class SolarRobot:
         frame1 = self.motor1.stop_frame()
         frame2 = self.motor2.stop_frame()
 
-        if frame1 is None and frame2 is None:
-            return
-
-        # If one motor has no direction, send only to the other
-        if frame1 is None:
-
-            self.motor2.send(frame2)
-
-        elif frame2 is None:
-
-            self.motor1.send(frame1)
-
-        else:
-
-            send_simultaneous(
-                self.motor1,
-                frame1,
-                self.motor2,
-                frame2
-            )
-
+        send_simultaneous(
+            self.motor1,
+            frame1,
+            self.motor2,
+            frame2
+        )
         self.motor1.direction = None
         self.motor2.direction = None
 
@@ -307,70 +292,72 @@ class SolarRobot:
 # MAIN
 # ============================================================
 
-robot = None
+if __name__ == "__main__":
+    robot = None
 
-try:
+    try:
 
-    robot = SolarRobot()
+        robot = SolarRobot()
 
-    print()
-    print("==============================")
-    print(" SOLAR ROBOT")
-    print("==============================")
-    print()
-    print("1 = Forward")
-    print("2 = Reverse")
-    print("3 = Left")
-    print("4 = Right")
-    print("5 = Stop")
-    print("q = Quit")
-    print()
-
-    while True:
-
-        command = input("Command: ").strip().lower()
-
-        if command == "1":
-
-            robot.forward()
-
-        elif command == "2":
-
-            robot.reverse()
-
-        elif command == "3":
-
-            robot.left()
-
-        elif command == "4":
-
-            robot.right()
-
-        elif command == "5":
-
-            robot.stop()
-
-        elif command == "q":
-
-            break
-
-        else:
-
-            print("Invalid command")
-
-
-except KeyboardInterrupt:
-
-    print("\nInterrupted")
-
-
-finally:
-
-    if robot is not None:
-
-        try:
-            robot.close()
-        except:
-            pass
-
-    print("Robot stopped.")
+        print()
+        print("==============================")
+        print(" SOLAR ROBOT")
+        print("==============================")
+        print()
+        print("1 = Forward")
+        print("2 = Reverse")
+        print("3 = Left")
+        print("4 = Right")
+        print("5 = Stop")
+        print("q = Quit")
+        print()
+    
+        while True:
+        
+            command = input("Command: ").strip().lower()
+    
+            if command == "1":
+            
+                robot.forward()
+    
+            elif command == "2":
+            
+                robot.reverse()
+    
+            elif command == "3":
+            
+                robot.left()
+    
+            elif command == "4":
+            
+                robot.right()
+    
+            elif command == "5":
+            
+                robot.stop()
+    
+            elif command == "q":
+            
+                break
+            
+            else:
+            
+                print("Invalid command")
+    
+    
+    except KeyboardInterrupt:
+    
+        print("\nInterrupted")
+    
+    
+    finally:
+    
+        if robot is not None:
+        
+            try:
+                robot.close()
+            except:
+                pass
+            
+        print("Robot stopped.")
+    
