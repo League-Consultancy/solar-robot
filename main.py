@@ -31,7 +31,7 @@ imu = MPU6050(
 
 print("Initializing ToF...")
 
-tof = ToF()
+#tof = ToF()
 
 print("All hardware initialized.")
 
@@ -88,7 +88,7 @@ def sensor_loop():
 
             imu_data = imu.read_all()
 
-            distance = tof.read_distance()
+ #           distance = tof.read_distance()
 
             with sensor_lock:
 
@@ -109,8 +109,8 @@ def sensor_loop():
                     "temperature":
                         imu_data["temperature"],
 
-                    "tof":
-                        distance
+  #                  "tof":
+  #                      distance
                 }
 
         except Exception as e:
@@ -149,7 +149,7 @@ def drive(command):
         "forward":
             robot.forward,
 
-        "reverse":
+        "backward":
             robot.reverse,
 
         "left":
