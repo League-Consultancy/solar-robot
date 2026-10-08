@@ -1,0 +1,9 @@
+dataset
+dataset_raw
+runs
+data_collection.py
+data_preparation.py
+.venv
+*/*.png
+*/*.txt
+*/*.keras

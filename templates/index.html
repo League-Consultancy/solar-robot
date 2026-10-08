@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+
 <html lang="en">
 
 <head>
@@ -15,20 +16,30 @@
 
 <title>Solar Robot</title>
 
+
 <style>
 
+/* =========================================================
+   GLOBAL
+   ========================================================= */
+
 * {
+
     box-sizing: border-box;
+
     -webkit-tap-highlight-color: transparent;
 }
+
 
 html,
 body {
 
     margin: 0;
+
     padding: 0;
 
     width: 100%;
+
     height: 100%;
 
     overflow: hidden;
@@ -39,6 +50,7 @@ body {
         sans-serif;
 
     background: #111;
+
     color: white;
 
     touch-action: none;
@@ -52,9 +64,11 @@ body {
 .container {
 
     width: 100%;
+
     height: 100%;
 
     display: flex;
+
     flex-direction: column;
 
     position: relative;
@@ -62,7 +76,7 @@ body {
 
 
 /* =========================================================
-   SENSOR FLOATING WINDOW
+   SENSOR PANEL
    ========================================================= */
 
 .sensor-panel {
@@ -70,6 +84,7 @@ body {
     position: absolute;
 
     top: 15px;
+
     left: 15px;
 
     width: 220px;
@@ -88,6 +103,7 @@ body {
     backdrop-filter: blur(10px);
 }
 
+
 .sensor-title {
 
     font-size: 15px;
@@ -96,6 +112,7 @@ body {
 
     margin-bottom: 8px;
 }
+
 
 .sensor-row {
 
@@ -108,6 +125,7 @@ body {
     margin: 4px 0;
 }
 
+
 .sensor-section {
 
     margin-top: 8px;
@@ -117,38 +135,158 @@ body {
     border-top: 1px solid #333;
 }
 
+
 .sensor-label {
 
     color: #999;
 }
+
 
 .sensor-value {
 
     font-family: monospace;
 }
 
-.brush-control {
+
+/* =========================================================
+   AUTONOMOUS PANEL
+   ========================================================= */
+
+.autonomous-panel {
+
+    position: absolute;
+
+    top: 15px;
+
+    right: 15px;
+
+    width: 260px;
+
+    background: rgba(20,20,20,0.92);
+
+    border-radius: 15px;
+
+    padding: 14px;
+
+    z-index: 100;
+
+    box-shadow:
+        0 5px 20px rgba(0,0,0,0.4);
+
+    backdrop-filter: blur(10px);
+}
+
+
+.autonomous-title {
+
+    font-size: 15px;
+
+    font-weight: bold;
+
+    margin-bottom: 10px;
+}
+
+
+.auto-row {
+
     display: flex;
+
+    justify-content: space-between;
+
+    font-size: 13px;
+
+    margin: 5px 0;
+}
+
+
+.auto-label {
+
+    color: #999;
+}
+
+
+.auto-value {
+
+    font-family: monospace;
+
+    font-weight: bold;
+}
+
+
+.auto-prediction {
+
+    font-size: 20px;
+
+    margin-top: 8px;
+
+    margin-bottom: 4px;
+
+    font-weight: bold;
+}
+
+
+.auto-confidence {
+
+    color: #aaa;
+
+    font-family: monospace;
+}
+
+
+.prediction-history {
+
+    margin-top: 10px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid #333;
+
+    font-size: 12px;
+
+    color: #aaa;
+
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   MODE SWITCH
+   ========================================================= */
+
+.mode-control {
+
+    display: flex;
+
     align-items: center;
+
     justify-content: space-between;
 
     padding: 12px 16px;
+
     margin: 12px;
 
     border-radius: 14px;
+
     background: rgba(255, 255, 255, 0.08);
 }
 
-.brush-control span {
+
+.mode-control span {
+
     font-size: 18px;
+
     font-weight: 600;
 }
 
+
 .switch {
+
     width: 58px;
+
     height: 32px;
 
     border: none;
+
     border-radius: 20px;
 
     padding: 3px;
@@ -160,10 +298,13 @@ body {
     transition: 0.2s;
 }
 
+
 .switch-knob {
+
     display: block;
 
     width: 26px;
+
     height: 26px;
 
     border-radius: 50%;
@@ -175,13 +316,60 @@ body {
     transition: 0.2s;
 }
 
+
 .switch.on {
+
     background: #2ecc71;
 }
 
+
 .switch.on .switch-knob {
+
     transform: translateX(26px);
 }
+
+
+.switch.auto {
+
+    background: #e67e22;
+}
+
+
+.switch.auto .switch-knob {
+
+    transform: translateX(26px);
+}
+
+
+/* =========================================================
+   DEVICE CONTROLS
+   ========================================================= */
+
+.device-control {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 12px 16px;
+
+    margin: 12px;
+
+    border-radius: 14px;
+
+    background: rgba(255, 255, 255, 0.08);
+}
+
+
+.device-control span {
+
+    font-size: 18px;
+
+    font-weight: 600;
+}
+
 
 /* =========================================================
    MOVEMENT AREA
@@ -190,11 +378,13 @@ body {
 .controls {
 
     width: 100%;
+
     height: 100%;
 
     display: flex;
 
     align-items: center;
+
     justify-content: center;
 }
 
@@ -206,11 +396,13 @@ body {
 .dpad {
 
     width: min(85vw, 360px);
+
     height: min(85vw, 360px);
 
     display: grid;
 
     grid-template-columns: 1fr 1fr 1fr;
+
     grid-template-rows: 1fr 1fr 1fr;
 
     gap: 12px;
@@ -232,6 +424,7 @@ body {
     display: flex;
 
     align-items: center;
+
     justify-content: center;
 
     user-select: none;
@@ -262,9 +455,18 @@ body {
 }
 
 
+.button.disabled {
+
+    opacity: 0.25;
+
+    pointer-events: none;
+}
+
+
 .forward {
 
     grid-column: 2;
+
     grid-row: 1;
 }
 
@@ -272,6 +474,7 @@ body {
 .left {
 
     grid-column: 1;
+
     grid-row: 2;
 }
 
@@ -279,6 +482,7 @@ body {
 .right {
 
     grid-column: 3;
+
     grid-row: 2;
 }
 
@@ -286,6 +490,7 @@ body {
 .backward {
 
     grid-column: 2;
+
     grid-row: 3;
 }
 
@@ -313,7 +518,66 @@ body {
     font-size: 13px;
 
     color: #aaa;
+
+    white-space: nowrap;
 }
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+    .sensor-panel {
+
+        width: 180px;
+
+        font-size: 11px;
+
+        padding: 10px;
+    }
+
+
+    .autonomous-panel {
+
+        width: 190px;
+
+        padding: 10px;
+
+        right: 10px;
+
+        top: 10px;
+    }
+
+
+    .autonomous-title {
+
+        font-size: 13px;
+    }
+
+
+    .auto-row {
+
+        font-size: 11px;
+    }
+
+
+    .auto-prediction {
+
+        font-size: 17px;
+    }
+
+
+    .sensor-panel {
+
+        top: 10px;
+
+        left: 10px;
+    }
+
+}
+
 
 </style>
 
@@ -326,155 +590,339 @@ body {
 <div class="container">
 
 
-    <!-- ================================================
-         SENSOR WINDOW
-         ================================================ -->
+<!-- =====================================================
+     SENSOR WINDOW
+     ===================================================== -->
 
-    <div class="sensor-panel">
+<div class="sensor-panel">
 
-        <div class="sensor-title">
-            ROBOT SENSORS
-        </div>
+    <div class="sensor-title">
+        ROBOT SENSORS
+    </div>
 
 
-        <div class="sensor-section">
+    <div class="sensor-section">
 
-            <div class="sensor-row">
-                <span class="sensor-label">AX</span>
-                <span id="ax" class="sensor-value">--</span>
-            </div>
+        <div class="sensor-row">
 
-            <div class="sensor-row">
-                <span class="sensor-label">AY</span>
-                <span id="ay" class="sensor-value">--</span>
-            </div>
+            <span class="sensor-label">
+                AX
+            </span>
 
-            <div class="sensor-row">
-                <span class="sensor-label">AZ</span>
-                <span id="az" class="sensor-value">--</span>
-            </div>
+            <span id="ax" class="sensor-value">
+                --
+            </span>
 
         </div>
 
 
-        <div class="sensor-section">
+        <div class="sensor-row">
 
-            <div class="sensor-row">
-                <span class="sensor-label">GX</span>
-                <span id="gx" class="sensor-value">--</span>
-            </div>
+            <span class="sensor-label">
+                AY
+            </span>
 
-            <div class="sensor-row">
-                <span class="sensor-label">GY</span>
-                <span id="gy" class="sensor-value">--</span>
-            </div>
-
-            <div class="sensor-row">
-                <span class="sensor-label">GZ</span>
-                <span id="gz" class="sensor-value">--</span>
-            </div>
+            <span id="ay" class="sensor-value">
+                --
+            </span>
 
         </div>
 
 
-        <div class="sensor-section">
+        <div class="sensor-row">
 
-            <div class="sensor-row">
+            <span class="sensor-label">
+                AZ
+            </span>
 
-                <span class="sensor-label">
-                    TOF
-                </span>
-
-                <span
-                    id="tof"
-                    class="sensor-value"
-                >
-                    -- mm
-                </span>
-
-            </div>
+            <span id="az" class="sensor-value">
+                --
+            </span>
 
         </div>
 
     </div>
 
 
-    <!-- ================================================
-         CONTROLS
-         ================================================ -->
+    <div class="sensor-section">
 
-    <div class="controls">
+        <div class="sensor-row">
 
-        <div class="dpad">
+            <span class="sensor-label">
+                GX
+            </span>
 
-            <button
-                class="button forward"
-                data-command="forward"
-            >
-                ▲
-            </button>
+            <span id="gx" class="sensor-value">
+                --
+            </span>
 
-
-            <button
-                class="button left"
-                data-command="left"
-            >
-                ◀
-            </button>
+        </div>
 
 
-            <button
-                class="button right"
-                data-command="right"
-            >
-                ▶
-            </button>
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                GY
+            </span>
+
+            <span id="gy" class="sensor-value">
+                --
+            </span>
+
+        </div>
 
 
-            <button
-                class="button backward"
-                data-command="backward"
-            >
-                ▼
-            </button>
+        <div class="sensor-row">
 
+            <span class="sensor-label">
+                GZ
+            </span>
+
+            <span id="gz" class="sensor-value">
+                --
+            </span>
 
         </div>
 
     </div>
 
-    <div class="brush-control">
-    <span>Brush</span>
 
-    <button id="brushSwitch"
-            class="switch"
-            type="button"
-            aria-pressed="false">
+    <div class="sensor-section">
 
-        <span class="switch-knob"></span>
+        <div class="sensor-row">
 
-    </button>
+            <span class="sensor-label">
+                TOF
+            </span>
+
+            <span id="tof" class="sensor-value">
+                -- mm
+            </span>
+
+        </div>
+
+    </div>
+
 </div>
 
-    <div class="device-control">
-    <span>Pump</span>
 
-    <button id="pumpSwitch"
-            class="switch on"
-            type="button"
-            aria-pressed="true">
+<!-- =====================================================
+     AUTONOMOUS PANEL
+     ===================================================== -->
 
-        <span class="switch-knob"></span>
+<div class="autonomous-panel">
 
-    </button>
-</div>
+    <div class="autonomous-title">
+        AUTONOMOUS NAVIGATION
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            MODE
+        </span>
+
+        <span
+            id="autoMode"
+            class="auto-value"
+        >
+            MANUAL
+        </span>
+
+    </div>
+
 
     <div
-        id="status"
-        class="status"
+        id="autoPrediction"
+        class="auto-prediction"
     >
-        STOPPED
+        --
     </div>
+
+
+    <div
+        id="autoConfidence"
+        class="auto-confidence"
+    >
+        Confidence: --
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            Decision
+        </span>
+
+        <span
+            id="autoDecision"
+            class="auto-value"
+        >
+            --
+        </span>
+
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            Previous Turn
+        </span>
+
+        <span
+            id="previousTurn"
+            class="auto-value"
+        >
+            --
+        </span>
+
+    </div>
+
+
+    <div
+        id="predictionHistory"
+        class="prediction-history"
+    >
+        Last 5:
+        --
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     MOVEMENT
+     ===================================================== -->
+
+<div class="controls">
+
+    <div class="dpad">
+
+
+        <button
+            class="button forward"
+            data-command="forward"
+        >
+            ▲
+        </button>
+
+
+        <button
+            class="button left"
+            data-command="left"
+        >
+            ◀
+        </button>
+
+
+        <button
+            class="button right"
+            data-command="right"
+        >
+            ▶
+        </button>
+
+
+        <button
+            class="button backward"
+            data-command="backward"
+        >
+            ▼
+        </button>
+
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     MODE CONTROL
+     ===================================================== -->
+
+<div class="mode-control">
+
+    <span>
+        Autonomous
+    </span>
+
+
+    <button
+        id="autonomousSwitch"
+        class="switch"
+        type="button"
+        aria-pressed="false"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     BRUSH
+     ===================================================== -->
+
+<div class="device-control">
+
+    <span>
+        Brush
+    </span>
+
+
+    <button
+        id="brushSwitch"
+        class="switch"
+        type="button"
+        aria-pressed="false"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     PUMP
+     ===================================================== -->
+
+<div class="device-control">
+
+    <span>
+        Pump
+    </span>
+
+
+    <button
+        id="pumpSwitch"
+        class="switch on"
+        type="button"
+        aria-pressed="true"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     STATUS
+     ===================================================== -->
+
+<div
+    id="status"
+    class="status"
+>
+    STOPPED
+</div>
 
 
 </div>
@@ -484,16 +932,19 @@ body {
 
 
 /* =========================================================
-   DRIVE CONTROL
+   GLOBAL STATE
    ========================================================= */
 
 let activeButton = null;
+
 let activeCommand = null;
 
+let autonomous = false;
 
-/*
- * Send command to Flask
- */
+
+/* =========================================================
+   SEND MANUAL COMMAND
+   ========================================================= */
 
 function sendCommand(command) {
 
@@ -503,35 +954,63 @@ function sendCommand(command) {
             method: "POST"
         }
     )
+
+    .then(
+        response => response.json()
+    )
+
+    .then(
+        data => {
+
+            if (!data.success) {
+
+                console.error(
+                    data.error
+                );
+
+            }
+
+        }
+    )
+
     .catch(
         error => {
-            console.error(error);
+
+            console.error(
+                error
+            );
+
         }
     );
 }
 
 
-/*
- * START MOVEMENT
- */
+/* =========================================================
+   START MANUAL MOVEMENT
+   ========================================================= */
 
 function startMovement(button) {
 
-    /*
-     * IMPORTANT:
-     *
-     * If another button is already active,
-     * ignore this press.
-     *
-     * This guarantees:
-     *
-     * forward + left
-     *
-     * cannot happen simultaneously.
-     */
+
+    /* -----------------------------------------------
+       Autonomous mode blocks manual movement
+       ----------------------------------------------- */
+
+    if (autonomous) {
+
+        return;
+
+    }
+
+
+    /* -----------------------------------------------
+       Only one movement at a time
+       ----------------------------------------------- */
 
     if (activeButton !== null) {
+
         return;
+
     }
 
 
@@ -541,7 +1020,9 @@ function startMovement(button) {
         button.dataset.command;
 
 
-    button.classList.add("active");
+    button.classList.add(
+        "active"
+    );
 
 
     sendCommand(
@@ -553,133 +1034,338 @@ function startMovement(button) {
         .getElementById("status")
         .innerText =
         activeCommand.toUpperCase();
+
 }
 
 
-/*
- * STOP MOVEMENT
- */
+/* =========================================================
+   STOP MANUAL MOVEMENT
+   ========================================================= */
 
 function stopMovement(button) {
 
-    /*
-     * Only the currently active button
-     * is allowed to stop the robot.
-     */
 
     if (button !== activeButton) {
+
         return;
+
     }
 
 
-    button.classList.remove("active");
+    button.classList.remove(
+        "active"
+    );
 
 
     activeButton = null;
+
     activeCommand = null;
 
 
-    sendCommand("stop");
+    sendCommand(
+        "stop"
+    );
 
 
     document
         .getElementById("status")
         .innerText =
         "STOPPED";
+
 }
 
-const brushSwitch = document.getElementById("brushSwitch");
+
+/* =========================================================
+   AUTONOMOUS SWITCH
+   ========================================================= */
+
+const autonomousSwitch =
+    document.getElementById(
+        "autonomousSwitch"
+    );
+
+
+const autoMode =
+    document.getElementById(
+        "autoMode"
+    );
+
+
+autonomousSwitch.addEventListener(
+    "click",
+    async () => {
+
+        const newState =
+            !autonomous;
+
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/autonomous/on"
+                        : "/autonomous/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Autonomous command failed"
+                );
+
+            }
+
+
+            autonomous =
+                newState;
+
+
+            autonomousSwitch.classList.toggle(
+                "auto",
+                autonomous
+            );
+
+
+            autonomousSwitch.setAttribute(
+                "aria-pressed",
+                autonomous
+                    ? "true"
+                    : "false"
+            );
+
+
+            autoMode.innerText =
+                autonomous
+                    ? "AUTONOMOUS"
+                    : "MANUAL";
+
+
+            if (autonomous) {
+
+                document
+                    .getElementById("status")
+                    .innerText =
+                    "AUTONOMOUS";
+
+            }
+            else {
+
+                document
+                    .getElementById("status")
+                    .innerText =
+                    "STOPPED";
+
+            }
+
+
+        }
+        catch (error) {
+
+            console.error(
+                "Autonomous error:",
+                error
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   BRUSH
+   ========================================================= */
+
+const brushSwitch =
+    document.getElementById(
+        "brushSwitch"
+    );
+
 
 let brushOn = false;
 
-brushSwitch.addEventListener("click", async () => {
 
-    const newState = !brushOn;
+brushSwitch.addEventListener(
+    "click",
+    async () => {
 
-    try {
+        const newState =
+            !brushOn;
 
-        const response = await fetch(
-            newState ? "/brush/on" : "/brush/off",
-            {
-                method: "POST"
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/brush/on"
+                        : "/brush/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Brush command failed"
+                );
+
             }
-        );
 
-        const data = await response.json();
 
-        if (!data.success) {
-            throw new Error(data.error || "Brush command failed");
+            brushOn =
+                data.brush;
+
+
+            brushSwitch.classList.toggle(
+                "on",
+                brushOn
+            );
+
+
+            brushSwitch.setAttribute(
+                "aria-pressed",
+                brushOn
+                    ? "true"
+                    : "false"
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Brush error:",
+                error
+            );
+
         }
 
-        brushOn = data.brush;
-
-        brushSwitch.classList.toggle("on", brushOn);
-        brushSwitch.setAttribute(
-            "aria-pressed",
-            brushOn ? "true" : "false"
-        );
-
-    } catch (error) {
-
-        console.error("Brush error:", error);
-
     }
-});
+);
 
-const pumpSwitch = document.getElementById("pumpSwitch");
+
+/* =========================================================
+   PUMP
+   ========================================================= */
+
+const pumpSwitch =
+    document.getElementById(
+        "pumpSwitch"
+    );
+
 
 let pumpOn = true;
 
-pumpSwitch.addEventListener("click", async () => {
 
-    const newState = !pumpOn;
+pumpSwitch.addEventListener(
+    "click",
+    async () => {
 
-    try {
+        const newState =
+            !pumpOn;
 
-        const response = await fetch(
-            newState ? "/pump/on" : "/pump/off",
-            {
-                method: "POST"
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/pump/on"
+                        : "/pump/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Pump command failed"
+                );
+
             }
-        );
 
-        const data = await response.json();
 
-        if (!data.success) {
-            throw new Error(data.error || "Pump command failed");
+            pumpOn =
+                data.pump;
+
+
+            pumpSwitch.classList.toggle(
+                "on",
+                pumpOn
+            );
+
+
+            pumpSwitch.setAttribute(
+                "aria-pressed",
+                pumpOn
+                    ? "true"
+                    : "false"
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Pump error:",
+                error
+            );
+
         }
 
-        pumpOn = data.pump;
-
-        pumpSwitch.classList.toggle("on", pumpOn);
-
-        pumpSwitch.setAttribute(
-            "aria-pressed",
-            pumpOn ? "true" : "false"
-        );
-
-    } catch (error) {
-
-        console.error("Pump error:", error);
-
     }
-});
+);
+
 
 /* =========================================================
    TOUCH / MOUSE EVENTS
    ========================================================= */
 
 const buttons =
-    document.querySelectorAll(".button");
+    document.querySelectorAll(
+        ".button"
+    );
 
 
 buttons.forEach(
     button => {
 
 
-        /*
-         * TOUCH / POINTER DOWN
-         */
+        /* -----------------------------------------------
+           POINTER DOWN
+           ----------------------------------------------- */
 
         button.addEventListener(
             "pointerdown",
@@ -687,18 +1373,30 @@ buttons.forEach(
 
                 event.preventDefault();
 
+
+                if (autonomous) {
+
+                    return;
+
+                }
+
+
                 button.setPointerCapture(
                     event.pointerId
                 );
 
-                startMovement(button);
+
+                startMovement(
+                    button
+                );
+
             }
         );
 
 
-        /*
-         * POINTER UP
-         */
+        /* -----------------------------------------------
+           POINTER UP
+           ----------------------------------------------- */
 
         button.addEventListener(
             "pointerup",
@@ -706,14 +1404,17 @@ buttons.forEach(
 
                 event.preventDefault();
 
-                stopMovement(button);
+                stopMovement(
+                    button
+                );
+
             }
         );
 
 
-        /*
-         * POINTER CANCEL
-         */
+        /* -----------------------------------------------
+           POINTER CANCEL
+           ----------------------------------------------- */
 
         button.addEventListener(
             "pointercancel",
@@ -721,16 +1422,17 @@ buttons.forEach(
 
                 event.preventDefault();
 
-                stopMovement(button);
+                stopMovement(
+                    button
+                );
+
             }
         );
 
 
-        /*
-         * POINTER LEAVES BUTTON
-         *
-         * Important for safety.
-         */
+        /* -----------------------------------------------
+           POINTER LEAVE
+           ----------------------------------------------- */
 
         button.addEventListener(
             "pointerleave",
@@ -740,8 +1442,12 @@ buttons.forEach(
                     event.buttons === 0
                 ) {
 
-                    stopMovement(button);
+                    stopMovement(
+                        button
+                    );
+
                 }
+
             }
         );
 
@@ -750,47 +1456,52 @@ buttons.forEach(
 
 
 /* =========================================================
-   EXTRA SAFETY
+   BROWSER FOCUS SAFETY
    ========================================================= */
-
-/*
- * If browser loses focus,
- * stop the robot.
- */
 
 window.addEventListener(
     "blur",
     () => {
 
-        if (activeButton !== null) {
+
+        if (
+            activeButton !== null
+        ) {
 
             activeButton
                 .classList
                 .remove("active");
 
+
             activeButton = null;
+
             activeCommand = null;
 
-            sendCommand("stop");
+
+            sendCommand(
+                "stop"
+            );
+
 
             document
                 .getElementById("status")
                 .innerText =
                 "STOPPED";
+
         }
 
     }
 );
 
 
-/*
- * If page is hidden,
- * stop the robot.
- */
+/* =========================================================
+   PAGE VISIBILITY SAFETY
+   ========================================================= */
 
 document.addEventListener(
     "visibilitychange",
     () => {
+
 
         if (
             document.hidden &&
@@ -801,10 +1512,15 @@ document.addEventListener(
                 .classList
                 .remove("active");
 
+
             activeButton = null;
+
             activeCommand = null;
 
-            sendCommand("stop");
+
+            sendCommand(
+                "stop"
+            );
 
         }
 
@@ -821,7 +1537,9 @@ async function updateSensors() {
     try {
 
         const response =
-            await fetch("/sensors");
+            await fetch(
+                "/sensors"
+            );
 
 
         const data =
@@ -829,57 +1547,77 @@ async function updateSensors() {
 
 
         /*
-         * IMU
+         * Flask returns:
+         *
+         * acceleration
+         * gyroscope
+         * temperature
+         * tof
          */
+
 
         document
             .getElementById("ax")
             .innerText =
-            Number(data.imu.ax)
-                .toFixed(2);
+            Number(
+                data.acceleration.x
+            ).toFixed(2);
+
 
         document
             .getElementById("ay")
             .innerText =
-            Number(data.imu.ay)
-                .toFixed(2);
+            Number(
+                data.acceleration.y
+            ).toFixed(2);
+
 
         document
             .getElementById("az")
             .innerText =
-            Number(data.imu.az)
-                .toFixed(2);
+            Number(
+                data.acceleration.z
+            ).toFixed(2);
 
 
         document
             .getElementById("gx")
             .innerText =
-            Number(data.imu.gx)
-                .toFixed(2);
+            Number(
+                data.gyroscope.x
+            ).toFixed(2);
+
 
         document
             .getElementById("gy")
             .innerText =
-            Number(data.imu.gy)
-                .toFixed(2);
+            Number(
+                data.gyroscope.y
+            ).toFixed(2);
+
 
         document
             .getElementById("gz")
             .innerText =
-            Number(data.imu.gz)
-                .toFixed(2);
+            Number(
+                data.gyroscope.z
+            ).toFixed(2);
 
 
-        /*
-         * TOF
-         */
+        if (
+            data.tof !== undefined &&
+            data.tof !== null
+        ) {
 
-        document
-            .getElementById("tof")
-            .innerText =
-            Number(data.tof.distance)
-                .toFixed(0)
-            + " mm";
+            document
+                .getElementById("tof")
+                .innerText =
+                Number(
+                    data.tof
+                ).toFixed(0)
+                + " mm";
+
+        }
 
     }
 
@@ -895,9 +1633,185 @@ async function updateSensors() {
 }
 
 
-/*
- * Update sensors 10 times/sec
- */
+/* =========================================================
+   AUTONOMOUS STATUS UPDATE
+   ========================================================= */
+
+async function updateAutonomousStatus() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/autonomous/status"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /* -----------------------------------------------
+           Autonomous state
+           ----------------------------------------------- */
+
+        autonomous =
+            data.autonomous;
+
+
+        autonomousSwitch.classList.toggle(
+            "auto",
+            autonomous
+        );
+
+
+        autonomousSwitch.setAttribute(
+            "aria-pressed",
+            autonomous
+                ? "true"
+                : "false"
+        );
+
+
+        autoMode.innerText =
+            autonomous
+                ? "AUTONOMOUS"
+                : "MANUAL";
+
+
+        /* -----------------------------------------------
+           Prediction
+           ----------------------------------------------- */
+
+        const prediction =
+            data.prediction || "--";
+
+
+        document
+            .getElementById(
+                "autoPrediction"
+            )
+            .innerText =
+            prediction.toUpperCase();
+
+
+        /* -----------------------------------------------
+           Confidence
+           ----------------------------------------------- */
+
+        const confidence =
+            Number(
+                data.confidence || 0
+            );
+
+
+        document
+            .getElementById(
+                "autoConfidence"
+            )
+            .innerText =
+            "Confidence: " +
+            (confidence * 100)
+                .toFixed(1) +
+            "%";
+
+
+        /* -----------------------------------------------
+           Decision
+           ----------------------------------------------- */
+
+        document
+            .getElementById(
+                "autoDecision"
+            )
+            .innerText =
+            (
+                data.decision || "--"
+            ).toUpperCase();
+
+
+        /* -----------------------------------------------
+           Previous turn
+           ----------------------------------------------- */
+
+        document
+            .getElementById(
+                "previousTurn"
+            )
+            .innerText =
+            (
+                data.previous_turn || "--"
+            ).toUpperCase();
+
+
+        /* -----------------------------------------------
+           Prediction history
+           ----------------------------------------------- */
+
+        const history =
+            data.prediction_history || [];
+
+
+        if (history.length === 0) {
+
+            document
+                .getElementById(
+                    "predictionHistory"
+                )
+                .innerText =
+                "Last 5: --";
+
+        }
+        else {
+
+            document
+                .getElementById(
+                    "predictionHistory"
+                )
+                .innerText =
+                "Last 5: " +
+                history
+                    .map(
+                        item =>
+                            item.toUpperCase()
+                    )
+                    .join("  ");
+
+        }
+
+
+        /* -----------------------------------------------
+           Status text
+           ----------------------------------------------- */
+
+        if (autonomous) {
+
+            document
+                .getElementById(
+                    "status"
+                )
+                .innerText =
+                "AUTONOMOUS";
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Autonomous status error:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE SENSOR DATA
+   ========================================================= */
 
 setInterval(
     updateSensors,
@@ -906,6 +1820,19 @@ setInterval(
 
 
 updateSensors();
+
+
+/* =========================================================
+   UPDATE AI STATUS
+   ========================================================= */
+
+setInterval(
+    updateAutonomousStatus,
+    100
+);
+
+
+updateAutonomousStatus();
 
 
 </script>
