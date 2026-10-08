@@ -1,0 +1,6197 @@
+Loading older messages…
+Pasted text(20261008-093932).txtDocument
+still not refreshed accuracy for actual training
+it stops at epoch 7
+
+Yes. Now the log makes the problem clear.
+
+Your dataset split is working correctly: each class gets its own 20% validation split:
+forward: 101 train / 25 val
+left:     29 train /  7 val
+right:    30 train /  8 val
+turn:     58 train / 15 val
+
+So the validation set is no longer broken.
+
+The problem now is EarlyStopping.
+What is actually happening
+
+Stage 2:
+Epoch 1  val_accuracy = 0.8364
+Epoch 2  val_accuracy = 0.8182
+Epoch 3  val_accuracy = 0.8182
+...
+Epoch 10 val_accuracy = 0.8182
+Epoch 11 val_accuracy = 0.8000
+
+Epoch 11: early stopping
+
+Then:
+Restoring model weights from the end of the best epoch: 1.
+
+Your patience=10 means:
+
+    Stop after 10 consecutive epochs without improvement.
+
+So it is not stopping because training is finished. It is stopping because the Stage-2 validation accuracy hasn't beaten 83.64%.
+
+And because your goal right now is to actually train through the requested 30 fine-tuning epochs, I would remove EarlyStopping from Stage 2 entirely.
+
+Also, there is another important observation: your Stage-2 training accuracy is improving:
+0.5000
+0.5275
+0.5046
+0.4679
+0.5642
+0.5550
+0.5367
+0.5550
+0.5963
+0.6193
+0.5917
+
+while validation stays around 0.81.
+
+So Stage 2 is actually training, but it isn't improving validation performance yet.
+What you should change
+1. Remove EarlyStopping from Stage 2
+
+Find this:
+stage2_callbacks = [
+
+    global_checkpoint,
+
+    keras.callbacks.EarlyStopping(
+        monitor="val_accuracy",
+        patience=10,
+        mode="max",
+        restore_best_weights=True,
+        verbose=1
+    ),
+
+    keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.3,
+        patience=4,
+        min_lr=1e-7,
+        verbose=1
+    )
+]
+
+Replace it with:
+stage2_callbacks = [
+
+    global_checkpoint,
+
+    keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.3,
+        patience=5,
+        min_lr=1e-7,
+        verbose=1
+    )
+]
+
+Now:
+EPOCHS_FINE = 30
+
+will actually run all 30 epochs.
+2. But I also recommend changing the Stage-2 learning rate
+
+Your Stage 2 is currently:
+learning_rate=1e-5
+
+and your results show the model isn't really improving validation accuracy.
+
+I'd use:
+learning_rate=3e-6
+
+for the fine-tuning stage.
+
+So change:
+model.compile(
+
+    optimizer=keras.optimizers.Adam(
+        learning_rate=1e-5
+    ),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=["accuracy"]
+
+)
+
+to:
+model.compile(
+
+    optimizer=keras.optimizers.Adam(
+        learning_rate=3e-6
+    ),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=["accuracy"]
+
+)
+
+This is especially sensible because you are unfreezing a pretrained MobileNet backbone. You don't want the pretrained features to move too aggressively.
+3. Your "actual training accuracy" question
+
+I think this is the important distinction.
+
+You have:
+Stage 1
+Training accuracy
+79.82%
+
+Validation accuracy
+83.64%
+
+at epoch 10.
+
+Then you load the best Stage-1 model:
+Best Stage 1 validation accuracy: 0.8364
+Loading best Stage 1 model before fine-tuning...
+
+That's correct.
+
+Then Stage 2 starts.
+
+Its first epoch reports:
+accuracy: 0.5000
+val_accuracy: 0.8364
+
+This does not mean the Stage-1 accuracy wasn't refreshed.
+
+It means:
+
+    The backbone has now been unfrozen, so the model is being trained differently and the training metric is being measured during the new fine-tuning epoch.
+
+The important thing is that the weights did start from the best Stage-1 model.
+
+And the validation accuracy of epoch 1 is exactly:
+0.8364
+
+which matches the Stage-1 best.
+
+So the model loading is working.
+4. If by "refresh accuracy" you mean you want Stage 2 to start with the old accuracy
+
+You can't force the training accuracy metric to begin at 83.64%.
+
+Accuracy is calculated from predictions on the current training batch.
+
+What we can guarantee is:
+Stage 1 best weights
+       ↓
+       ↓
+Stage 2 starts from these weights
+       ↓
+fine-tuning
+
+And your log proves this is happening because Stage 2 epoch 1 has:
+val_accuracy = 0.8364
+
+exactly equal to the Stage-1 best.
+5. I would actually make Stage 2 run like this
+
+Use:
+EPOCHS_FINE = 30
+
+and:
+model.compile(
+
+    optimizer=keras.optimizers.Adam(
+        learning_rate=3e-6
+    ),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=["accuracy"]
+
+)
+
+Then:
+stage2_callbacks = [
+
+    global_checkpoint,
+
+    keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.3,
+        patience=5,
+        min_lr=1e-7,
+        verbose=1
+    )
+
+]
+
+Then:
+history_fine = model.fit(
+
+    train_ds,
+
+    validation_data=val_ds,
+
+    epochs=EPOCHS_FINE,
+
+    callbacks=stage2_callbacks
+
+)
+
+Now you'll get:
+Epoch 1/30
+Epoch 2/30
+Epoch 3/30
+...
+Epoch 30/30
+
+unless there is an actual runtime error.
+One thing I would NOT change
+
+Your current evaluation is actually looking much healthier now:
+forward: precision .8889, recall .9600
+left:    precision .8000, recall .5714
+right:   precision 1.0000, recall .7500
+turn:    precision .7059, recall .8000
+
+with overall:
+83.64%
+
+and the confusion matrix is a proper 4×4 matrix.
+
+So don't chase the old 94.44%. That old number came from the broken validation distribution. Your current 83.64% is a meaningful four-class result.
+My recommendation now
+
+Run 30 full fine-tuning epochs with 3e-6 and no Stage-2 EarlyStopping. Let the global-best callback continue saving only when validation accuracy beats 83.64%.
+
+If it stays around 81–84% for all 30 epochs, then we investigate the model/dataset rather than having EarlyStopping hide what is happening.
+Pasted text(20261008-094852).txtDocument
+Best global accuracy isnt being refreshed
+
+Now we can see the exact bug.
+
+Your global-best callback is working correctly. It reports:
+0.8000 -> 0.8182
+0.8182 -> 0.8364
+
+and saves the model both times.
+
+The problem is only this variable:
+global_best_accuracy
+
+You initialize it to 0.8000, but your callback updates its own:
+self.best
+
+It does not update the outside variable global_best_accuracy.
+
+That's why the final output says:
+Best global validation accuracy:
+0.8000
+
+even though the actual global best is 0.8364.
+Fix
+
+Your callback already has the correct value:
+global_checkpoint.best
+
+So at the end, change:
+print(
+    f"  {global_best_accuracy:.4f}"
+)
+
+to:
+print(
+    f"  {global_checkpoint.best:.4f}"
+)
+
+That's the immediate fix.
+But I recommend fixing it properly
+
+Change your callback so it explicitly updates a shared variable.
+Replace your current GlobalBestCheckpoint with:
+class GlobalBestCheckpoint(
+    keras.callbacks.Callback
+):
+
+    def __init__(
+        self,
+        filepath,
+        initial_best
+    ):
+
+        super().__init__()
+
+        self.filepath = filepath
+
+        self.best = initial_best
+
+
+    def on_epoch_end(
+        self,
+        epoch,
+        logs=None
+    ):
+
+        if logs is None:
+            return
+
+        current = logs.get(
+            "val_accuracy"
+        )
+
+        if current is None:
+            return
+
+        if current > self.best:
+
+            old_best = self.best
+
+            self.best = current
+
+            print()
+            print(
+                "Global validation accuracy "
+                f"improved: {old_best:.4f} "
+                f"-> {self.best:.4f}"
+            )
+
+            self.model.save(
+                self.filepath
+            )
+
+            print(
+                "Global best model saved."
+            )
+
+This part is already essentially what your current run is using.
+Then change your final section
+
+Currently you have:
+print()
+print(
+    "Best Stage 1 validation accuracy:"
+)
+
+print(
+    f"  {best_stage1_val_accuracy:.4f}"
+)
+
+print()
+print(
+    "Best global validation accuracy:"
+)
+
+print(
+    f"  {global_best_accuracy:.4f}"
+)
+
+Replace it with:
+print()
+print(
+    "Best Stage 1 validation accuracy:"
+)
+
+print(
+    f"  {best_stage1_val_accuracy:.4f}"
+)
+
+print()
+print(
+    "Best global validation accuracy:"
+)
+
+print(
+    f"  {global_checkpoint.best:.4f}"
+)
+
+Now your output will correctly say:
+Best Stage 1 validation accuracy:
+  0.8000
+
+Best global validation accuracy:
+  0.8364
+There is another thing I want you to fix
+
+Your evaluation proves that the 0.8364 model really was saved:
+Global validation accuracy improved: 0.8182 -> 0.8364
+Global best model saved.
+
+Then your final evaluation is:
+Validation accuracy : 0.8364
+
+So training/best_model.keras is correct.
+
+The only thing wrong is the printed variable.
+Your training actually worked
+
+Your complete progression was:
+Stage 1:
+
+Epoch 1    49.09%
+Epoch 2    56.36%
+Epoch 3    61.82%
+Epoch 4    76.36%
+Epoch 5    78.18%
+Epoch 6    78.18%
+Epoch 7    76.36%
+Epoch 8    78.18%
+Epoch 9    80.00%  ← Stage 1 best
+Epoch 10   78.18%
+
+Then fine tuning:
+Stage 2:
+
+Epoch 1    80.00%
+...
+Epoch 17   81.82%  ← global best
+...
+Epoch 26   83.64%  ← NEW global best
+...
+Epoch 30   83.64%
+
+Exactly as shown in your log.
+
+So your model did improve from 80.00% → 81.82% → 83.64%.
+
+The global checkpoint logic is working.
+The final output variable was simply stale.
+
+Use:
+global_checkpoint.best
+
+instead of:
+global_best_accuracy
+
+and you're done.
+Okay Now we will create the main script that can be used to run the robot
+.
+We have our best model 
+now create a script for robot movement
+what I want is 
+robot capture and evaluates at 15fps
+each frame goes to model
+result 
+if three out of five continuous result is any of the right left or turn act accordingly
+also 
+if result is turn we stop move slightly left check if it says move right then go to previous position and move right same with right side if turn or forward on left then if same on right then go as per previous turn
+
+Yes. We can now make the autonomous movement controller around the trained MobileNetV3 model.
+
+The logic I recommend is:
+Camera @ 15 FPS
+      ↓
+Frame
+      ↓
+MobileNetV3
+      ↓
+forward / left / right / turn
+      ↓
+5-result rolling window
+      ↓
+If LEFT/RIGHT/TURN appears ≥ 3 times
+      ↓
+Take action
+
+For forward, I would keep the robot moving forward normally. For left/right, we require the 3-of-5 confirmation before changing direction.
+
+For turn, we need the special probing behavior you described.
+1. Turn decision logic
+
+Suppose the robot is moving forward and the model says:
+TURN
+
+We do not immediately choose left/right.
+
+Instead:
+              TURN detected
+                    │
+                    ▼
+             Stop robot
+                    │
+                    ▼
+        Move slightly LEFT
+                    │
+                    ▼
+              Capture 5 frames
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+      LEFT/FORWARD          RIGHT
+          │                   │
+          │                   ▼
+          │          Return to previous position
+          │                   │
+          │                   ▼
+          │          Move slightly RIGHT
+          │                   │
+          │                   ▼
+          │             Capture 5 frames
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+             Make decision
+
+And if both sides indicate the same ambiguous result, we use the previous turn direction.
+
+For example:
+previous_turn = LEFT
+
+TURN
+ ↓
+probe LEFT → FORWARD
+ ↓
+probe RIGHT → FORWARD
+ ↓
+both ambiguous
+ ↓
+choose LEFT
+
+This is useful because your robot should not randomly choose a side at every intersection.
+2. Important implementation detail
+
+I would not use a simple time.sleep() for the entire robot controller.
+
+Instead, movement operations can use short controlled movements:
+robot.left()
+time.sleep(0.25)
+robot.stop()
+
+The exact 0.25 s will be a calibration parameter.
+
+Later we can replace this with encoder-based distance, which would be much better for your robot.
+3. Main autonomous script
+
+Assuming your existing SolarRobot class already handles:
+robot.forward()
+robot.reverse()
+robot.left()
+robot.right()
+robot.stop()
+
+we can create:
+# autonomous_robot.py
+
+import cv2
+import time
+import numpy as np
+import tensorflow as tf
+from collections import deque
+
+from robot import SolarRobot
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+MODEL_PATH = "training/best_model.keras"
+
+CAMERA_DEVICE = "/dev/video3"
+
+FPS = 15
+
+IMAGE_WIDTH = 640
+IMAGE_HEIGHT = 480
+
+MODEL_SIZE = 224
+
+CLASSES = [
+    "forward",
+    "left",
+    "right",
+    "turn"
+]
+
+# Number of predictions used for decision
+WINDOW_SIZE = 5
+
+# Minimum number of same predictions required
+REQUIRED_COUNT = 3
+
+# ------------------------------------------------------------
+# Turn probing
+# ------------------------------------------------------------
+
+# How long to move during a probe.
+# MUST BE CALIBRATED experimentally.
+PROBE_TIME = 0.25
+
+# Time after movement before capturing the probe result
+SETTLE_TIME = 0.10
+
+# Number of frames used during a probe
+PROBE_FRAMES = 5
+
+# ------------------------------------------------------------
+# Forward movement
+# ------------------------------------------------------------
+
+# How long to move before evaluating again.
+# Since the model is continuously evaluated, normally
+# this doesn't need to be large.
+FORWARD_CHECK_INTERVAL = 0.0
+
+
+# ============================================================
+# MODEL
+# ============================================================
+
+print("Loading model...")
+
+model = tf.keras.models.load_model(MODEL_PATH)
+
+print("Model loaded.")
+
+
+# ============================================================
+# CAMERA
+# ============================================================
+
+cap = cv2.VideoCapture(CAMERA_DEVICE)
+
+if not cap.isOpened():
+    raise RuntimeError(
+        f"Could not open camera {CAMERA_DEVICE}"
+    )
+
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, IMAGE_WIDTH)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, IMAGE_HEIGHT)
+cap.set(cv2.CAP_PROP_FPS, FPS)
+
+print("Camera opened.")
+
+
+# ============================================================
+# ROBOT
+# ============================================================
+
+robot = SolarRobot()
+
+print("Robot initialized.")
+
+
+# ============================================================
+# STATE
+# ============================================================
+
+# Last confirmed turn direction.
+#
+# Possible values:
+#     "left"
+#     "right"
+#     None
+#
+previous_turn = None
+
+
+# Rolling prediction history
+prediction_history = deque(maxlen=WINDOW_SIZE)
+
+
+# ============================================================
+# MODEL PREDICTION
+# ============================================================
+
+def predict_frame(frame):
+    """
+    Run one camera frame through the trained model.
+
+    Returns:
+        class_name
+        confidence
+    """
+
+    image = cv2.resize(
+        frame,
+        (MODEL_SIZE, MODEL_SIZE)
+    )
+
+    image = np.expand_dims(image, axis=0)
+
+    predictions = model.predict(
+        image,
+        verbose=0
+    )[0]
+
+    class_index = int(np.argmax(predictions))
+
+    confidence = float(predictions[class_index])
+
+    class_name = CLASSES[class_index]
+
+    return class_name, confidence
+
+
+# ============================================================
+# NORMAL 5-FRAME DECISION
+# ============================================================
+
+def get_confirmed_decision():
+    """
+    Check the last 5 predictions.
+
+    A decision is accepted when one of:
+        left
+        right
+        turn
+
+    appears at least 3 times.
+
+    Forward is allowed as the default state.
+    """
+
+    if len(prediction_history) < WINDOW_SIZE:
+        return None
+
+    counts = {
+        "forward": 0,
+        "left": 0,
+        "right": 0,
+        "turn": 0
+    }
+
+    for result in prediction_history:
+        counts[result] += 1
+
+    # Priority order is important.
+    #
+    # We first look for explicit directional decisions.
+    for direction in ["left", "right", "turn"]:
+
+        if counts[direction] >= REQUIRED_COUNT:
+            return direction
+
+    # Otherwise continue forward.
+    if counts["forward"] >= REQUIRED_COUNT:
+        return "forward"
+
+    return None
+
+
+# ============================================================
+# CAPTURE MULTIPLE FRAMES
+# ============================================================
+
+def capture_predictions(number_of_frames):
+    """
+    Capture and evaluate a number of consecutive frames.
+
+    Returns:
+        list of (class_name, confidence)
+    """
+
+    results = []
+
+    for _ in range(number_of_frames):
+
+        ret, frame = cap.read()
+
+        if not ret:
+            continue
+
+        result, confidence = predict_frame(frame)
+
+        results.append(
+            (result, confidence)
+        )
+
+        print(
+            f"Probe prediction: "
+            f"{result:8s} "
+            f"{confidence:.3f}"
+        )
+
+        # Display camera
+        cv2.imshow(
+            "Robot Camera",
+            frame
+        )
+
+        # Keep OpenCV responsive
+        cv2.waitKey(1)
+
+    return results
+
+
+# ============================================================
+# CONFIRM PROBE RESULT
+# ============================================================
+
+def evaluate_probe(results):
+    """
+    Evaluate probe predictions using 3-of-5 logic.
+
+    Returns:
+        "forward"
+        "left"
+        "right"
+        "turn"
+        None
+    """
+
+    if len(results) == 0:
+        return None
+
+    counts = {
+        "forward": 0,
+        "left": 0,
+        "right": 0,
+        "turn": 0
+    }
+
+    for result, _ in results:
+        counts[result] += 1
+
+    for direction in [
+        "left",
+        "right",
+        "forward",
+        "turn"
+    ]:
+
+        if counts[direction] >= REQUIRED_COUNT:
+            return direction
+
+    return None
+
+
+# ============================================================
+# SMALL MOVEMENT
+# ============================================================
+
+def move_for(direction, duration):
+    """
+    Move in a direction for a short amount of time,
+    then stop.
+    """
+
+    print(
+        f"Moving {direction} "
+        f"for {duration:.2f}s"
+    )
+
+    if direction == "left":
+        robot.left()
+
+    elif direction == "right":
+        robot.right()
+
+    elif direction == "forward":
+        robot.forward()
+
+    elif direction == "reverse":
+        robot.reverse()
+
+    elif direction == "stop":
+        robot.stop()
+        return
+
+    time.sleep(duration)
+
+    robot.stop()
+
+    time.sleep(SETTLE_TIME)
+
+
+# ============================================================
+# TURN HANDLER
+# ============================================================
+
+def handle_turn():
+    """
+    Resolve an ambiguous TURN.
+
+    Procedure:
+
+        1. Stop.
+        2. Move slightly LEFT.
+        3. Evaluate.
+        4. If LEFT/forward -> accept LEFT.
+        5. If RIGHT -> return to original position.
+        6. Move slightly RIGHT.
+        7. Evaluate again.
+        8. Decide.
+        9. If still ambiguous, use previous_turn.
+    """
+
+    global previous_turn
+
+    print()
+    print("==============================")
+    print("TURN DETECTED")
+    print("==============================")
+
+    robot.stop()
+
+    # --------------------------------------------------------
+    # STEP 1
+    # Probe LEFT
+    # --------------------------------------------------------
+
+    print("Probing LEFT...")
+
+    move_for(
+        "left",
+        PROBE_TIME
+    )
+
+    left_results = capture_predictions(
+        PROBE_FRAMES
+    )
+
+    left_decision = evaluate_probe(
+        left_results
+    )
+
+    print(
+        f"LEFT probe result: "
+        f"{left_decision}"
+    )
+
+    # --------------------------------------------------------
+    # Case 1:
+    #
+    # Left side says LEFT
+    #
+    # This is strong evidence that left is the path.
+    # --------------------------------------------------------
+
+    if left_decision == "left":
+
+        print("LEFT confirmed.")
+
+        previous_turn = "left"
+
+        robot.left()
+
+        return "left"
+
+    # --------------------------------------------------------
+    # Case 2:
+    #
+    # Left probe says TURN.
+    #
+    # We need to inspect RIGHT.
+    # --------------------------------------------------------
+
+    if left_decision == "turn":
+
+        print(
+            "LEFT probe still says TURN."
+        )
+
+    # --------------------------------------------------------
+    # Case 3:
+    #
+    # Left probe says RIGHT.
+    #
+    # The robot is currently displaced to the left.
+    #
+    # Return to original position first.
+    # --------------------------------------------------------
+
+    if left_decision == "right":
+
+        print(
+            "LEFT probe says RIGHT."
+        )
+
+    # --------------------------------------------------------
+    # If left probe says FORWARD,
+    # don't immediately commit.
+    #
+    # We inspect the other side as well because
+    # this is the special ambiguity case.
+    # --------------------------------------------------------
+
+    if left_decision == "forward":
+
+        print(
+            "LEFT probe says FORWARD."
+        )
+
+    # --------------------------------------------------------
+    # STEP 2
+    # Return to original position.
+    #
+    # We moved left, so move right by the same amount.
+    # --------------------------------------------------------
+
+    move_for(
+        "right",
+        PROBE_TIME
+    )
+
+    # --------------------------------------------------------
+    # STEP 3
+    # Probe RIGHT
+    # --------------------------------------------------------
+
+    print("Probing RIGHT...")
+
+    move_for(
+        "right",
+        PROBE_TIME
+    )
+
+    right_results = capture_predictions(
+        PROBE_FRAMES
+    )
+
+    right_decision = evaluate_probe(
+        right_results
+    )
+
+    print(
+        f"RIGHT probe result: "
+        f"{right_decision}"
+    )
+
+    # --------------------------------------------------------
+    # STEP 4
+    # Interpret both probes
+    # --------------------------------------------------------
+
+    # LEFT clearly indicates left
+    # and RIGHT does not contradict it.
+    if (
+        left_decision == "left"
+        and right_decision != "right"
+    ):
+
+        print("Choosing LEFT.")
+
+        # Return from right probe
+        move_for(
+            "left",
+            PROBE_TIME
+        )
+
+        previous_turn = "left"
+
+        robot.left()
+
+        return "left"
+
+    # RIGHT clearly indicates right
+    if (
+        right_decision == "right"
+        and left_decision != "left"
+    ):
+
+        print("Choosing RIGHT.")
+
+        previous_turn = "right"
+
+        robot.right()
+
+        return "right"
+
+    # --------------------------------------------------------
+    # Both sides give FORWARD.
+    #
+    # Use previous turn direction.
+    # --------------------------------------------------------
+
+    if (
+        left_decision == "forward"
+        and right_decision == "forward"
+    ):
+
+        print(
+            "Both sides say FORWARD."
+        )
+
+        if previous_turn == "left":
+
+            print(
+                "Using previous turn: LEFT"
+            )
+
+            # Return to center
+            move_for(
+                "left",
+                PROBE_TIME
+            )
+
+            robot.left()
+
+            return "left"
+
+        elif previous_turn == "right":
+
+            print(
+                "Using previous turn: RIGHT"
+            )
+
+            robot.right()
+
+            return "right"
+
+    # --------------------------------------------------------
+    # One side forward, other side ambiguous
+    #
+    # Use previous direction.
+    # --------------------------------------------------------
+
+    if (
+        left_decision == "forward"
+        or right_decision == "forward"
+    ):
+
+        print(
+            "One side indicates FORWARD."
+        )
+
+        if previous_turn == "left":
+
+            print(
+                "Using previous turn: LEFT"
+            )
+
+            # Move from right probe back toward left
+            move_for(
+                "left",
+                PROBE_TIME
+            )
+
+            robot.left()
+
+            return "left"
+
+        elif previous_turn == "right":
+
+            print(
+                "Using previous turn: RIGHT"
+            )
+
+            robot.right()
+
+            return "right"
+
+    # --------------------------------------------------------
+    # Nothing reliable.
+    #
+    # Use previous turn if available.
+    # --------------------------------------------------------
+
+    print(
+        "No reliable probe result."
+    )
+
+    if previous_turn == "left":
+
+        print(
+            "Fallback: previous turn LEFT"
+        )
+
+        move_for(
+            "left",
+            PROBE_TIME
+        )
+
+        robot.left()
+
+        return "left"
+
+    if previous_turn == "right":
+
+        print(
+            "Fallback: previous turn RIGHT"
+        )
+
+        robot.right()
+
+        return "right"
+
+    # --------------------------------------------------------
+    # No previous direction.
+    #
+    # Safety behavior: stop.
+    # --------------------------------------------------------
+
+    print(
+        "No previous direction. "
+        "Stopping robot."
+    )
+
+    robot.stop()
+
+    return "stop"
+
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
+def main():
+
+    global prediction_history
+
+    print()
+    print("==============================")
+    print("AUTONOMOUS ROBOT STARTED")
+    print("==============================")
+
+    robot.stop()
+
+    try:
+
+        while True:
+
+            # ------------------------------------------------
+            # Capture frame
+            # ------------------------------------------------
+
+            ret, frame = cap.read()
+
+            if not ret:
+
+                print(
+                    "Camera frame failed."
+                )
+
+                robot.stop()
+
+                continue
+
+            # ------------------------------------------------
+            # AI prediction
+            # ------------------------------------------------
+
+            result, confidence = predict_frame(
+                frame
+            )
+
+            # ------------------------------------------------
+            # Add to rolling window
+            # ------------------------------------------------
+
+            prediction_history.append(
+                result
+            )
+
+            # ------------------------------------------------
+            # Debug output
+            # ------------------------------------------------
+
+            print(
+                f"AI: "
+                f"{result:8s} "
+                f"{confidence:.3f} "
+                f"| window: "
+                f"{list(prediction_history)}"
+            )
+
+            # ------------------------------------------------
+            # Show camera
+            # ------------------------------------------------
+
+            display = frame.copy()
+
+            cv2.putText(
+                display,
+                f"{result} {confidence:.2f}",
+                (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2
+            )
+
+            cv2.imshow(
+                "Robot Camera",
+                display
+            )
+
+            # ------------------------------------------------
+            # Keyboard emergency stop
+            # ------------------------------------------------
+
+            key = cv2.waitKey(1) & 0xFF
+
+            if key == ord("q"):
+
+                print(
+                    "Q pressed. Stopping."
+                )
+
+                break
+
+            # ------------------------------------------------
+            # Wait until 5 predictions exist
+            # ------------------------------------------------
+
+            if len(prediction_history) < WINDOW_SIZE:
+
+                robot.forward()
+
+                continue
+
+            # ------------------------------------------------
+            # Check decision
+            # ------------------------------------------------
+
+            decision = get_confirmed_decision()
+
+            # No stable decision yet
+            if decision is None:
+
+                # Keep current behavior.
+                #
+                # Initially we want to move forward.
+                robot.forward()
+
+                continue
+
+            print()
+            print(
+                f"CONFIRMED DECISION: "
+                f"{decision.upper()}"
+            )
+
+            # Clear history after a confirmed decision.
+            prediction_history.clear()
+
+            # ------------------------------------------------
+            # FORWARD
+            # ------------------------------------------------
+
+            if decision == "forward":
+
+                robot.forward()
+
+            # ------------------------------------------------
+            # LEFT
+            # ------------------------------------------------
+
+            elif decision == "left":
+
+                previous_turn = "left"
+
+                robot.left()
+
+            # ------------------------------------------------
+            # RIGHT
+            # ------------------------------------------------
+
+            elif decision == "right":
+
+                previous_turn = "right"
+
+                robot.right()
+
+            # ------------------------------------------------
+            # TURN
+            # ------------------------------------------------
+
+            elif decision == "turn":
+
+                handle_turn()
+
+    except KeyboardInterrupt:
+
+        print()
+        print(
+            "Keyboard interrupt."
+        )
+
+    finally:
+
+        print(
+            "Stopping robot..."
+        )
+
+        robot.stop()
+
+        cap.release()
+
+        cv2.destroyAllWindows()
+
+
+# ============================================================
+# ENTRY POINT
+# ============================================================
+
+if __name__ == "__main__":
+    main()
+One important correction to the turn algorithm
+
+There is one thing I would change before actually putting this on the robot.
+
+Your description says:
+
+    stop → slightly left → check → if right then go to previous position → move right → check
+
+So the physical positions should be:
+             ORIGINAL
+                 ●
+                 │
+       LEFT      │      RIGHT
+        ●        │        ●
+        │        │        │
+        └────────┼────────┘
+
+Therefore the actual sequence should be:
+Probe left
+Original
+   ↓
+move LEFT
+   ↓
+capture 5 frames
+
+Then always return to original:
+move RIGHT
+
+Then:
+Original
+   ↓
+move RIGHT
+   ↓
+capture 5 frames
+
+Then, if necessary, return to original before committing to the final direction.
+
+The code above follows this concept, but the final physical positioning can be made cleaner. I would actually implement the turn handler as a small state machine, because it will prevent accidental accumulated movement.
+4. The more important issue: 15 FPS
+
+There is a subtle point here.
+
+You said:
+
+    robot capture and evaluates at 15fps
+    each frame goes to model
+
+That means:
+Frame 1 → model
+Frame 2 → model
+Frame 3 → model
+Frame 4 → model
+Frame 5 → model
+...
+
+At 15 FPS:
+5 frames ≈ 333 ms
+
+So your decision latency is only about 1/3 second, which is good.
+
+However, 15 FPS camera capture does not guarantee 15 FPS inference.
+
+If your Pi gets:
+model inference = 100 ms
+
+then maximum inference rate is only:
+10 FPS
+
+If inference is:
+50 ms
+
+then:
+20 FPS
+
+So we should measure this on the Pi.
+5. I recommend one modification
+
+Instead of:
+model.predict(image)
+
+every time, we can eventually use:
+Camera thread
+      ↓
+latest frame
+      ↓
+Inference thread
+      ↓
+prediction
+      ↓
+movement controller
+
+That gives us a much cleaner architecture:
+                  ┌──────────────┐
+                  │    Camera    │
+                  │    15 FPS    │
+                  └──────┬───────┘
+                         ↓
+                  Latest Frame
+                         ↓
+                  ┌──────────────┐
+                  │ MobileNetV3  │
+                  │   Inference  │
+                  └──────┬───────┘
+                         ↓
+                 Prediction Queue
+                         ↓
+                  ┌──────────────┐
+                  │  3 of 5      │
+                  │   Filter     │
+                  └──────┬───────┘
+                         ↓
+                  ┌──────────────┐
+                  │   Movement   │
+                  │   Controller │
+                  └──────────────┘
+
+This will be especially important on the Raspberry Pi because the camera should continue capturing even if inference takes slightly longer than expected.
+6. One more thing about turn
+
+I would not let turn directly control a motor.
+
+Treat it as:
+TURN
+ ↓
+STOP
+ ↓
+LEFT PROBE
+ ↓
+RIGHT PROBE
+ ↓
+DECISION
+ ↓
+LEFT / RIGHT
+
+That's much safer than:
+TURN → randomly left
+
+And your previous_turn idea is very useful.
+
+For example:
+Previous confirmed turn = LEFT
+
+Current:
+TURN
+
+Probe:
+LEFT  → FORWARD
+RIGHT → FORWARD
+
+Therefore:
+LEFT
+
+while:
+Previous confirmed turn = RIGHT
+
+Current:
+TURN
+
+Probe:
+LEFT  → FORWARD
+RIGHT → FORWARD
+
+Therefore:
+RIGHT
+
+This gives the robot a kind of directional memory without asking the neural network to predict something it wasn't trained to predict.
+One thing I would change before running this
+
+The exact PROBE_TIME = 0.25 s should not be assumed correct. We need to calibrate how far the robot moves in 0.25 s at your current motor speed of 320.
+
+Once that is calibrated, we can make the turn operation much more reliable:
+encoder position before probe
+        ↓
+move left
+        ↓
+read AI
+        ↓
+restore EXACT encoder position
+        ↓
+move right
+        ↓
+read AI
+        ↓
+restore EXACT encoder position
+        ↓
+execute chosen turn
+
+Since your RMCS-2303 feedback/encoder reading is already working, I strongly recommend using encoder position rather than time for this part. That will make the "go to previous position" requirement exact instead of approximate.
+make this into flask so we can also handle our previous implementation 
+what I want is to integrate autonoumus into main script given below
+.
+from flask import Flask, render_template, jsonify
+import threading
+import time
+
+from motors.drive_final import SolarRobot
+from motors.brush_final import RMCS2304Motor
+from sensors.mpu6050 import MPU6050
+from sensors.tof import ToF
+from sensors.relay import PumpRelay
+
+
+# ============================================================
+# FLASK
+# ============================================================
+
+app = Flask(__name__)
+
+
+# ============================================================
+# HARDWARE
+# ============================================================
+
+print("Initializing robot...")
+
+robot = SolarRobot()
+
+brush = RMCS2304Motor(
+    port="/dev/ttyAMA1",
+    slave_id=7,
+    baudrate=9600
+)
+
+brush.set_speed(2048)
+
+print("Initializing MPU6050...")
+
+imu = MPU6050(
+    bus_number=1,
+    address=0x68
+)
+
+print("Initializing ToF...")
+
+#tof = ToF()
+
+print("All hardware initialized.")
+
+
+# ============================================================
+# LOCKS
+# ============================================================
+
+robot_lock = threading.Lock()
+sensor_lock = threading.Lock()
+
+
+# ============================================================
+# ROBOT STATE
+# ============================================================
+
+current_command = "stop"
+brush_state = False
+pump_state = True
+
+# ============================================================
+# SENSOR DATA
+# ============================================================
+
+sensor_data = {
+    "acceleration": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+    },
+
+    "gyroscope": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+    },
+
+    "temperature": 0,
+
+    "tof": 0
+}
+
+
+# ============================================================
+# SENSOR THREAD
+# ============================================================
+
+def sensor_loop():
+
+    global sensor_data
+
+    while True:
+
+        try:
+
+            imu_data = imu.read_all()
+
+ #           distance = tof.read_distance()
+
+            with sensor_lock:
+
+                sensor_data = {
+
+                    "acceleration": {
+                        "x": imu_data["acceleration"][0],
+                        "y": imu_data["acceleration"][1],
+                        "z": imu_data["acceleration"][2]
+                    },
+
+                    "gyroscope": {
+                        "x": imu_data["gyroscope"][0],
+                        "y": imu_data["gyroscope"][1],
+                        "z": imu_data["gyroscope"][2]
+                    },
+
+                    "temperature":
+                        imu_data["temperature"],
+
+  #                  "tof":
+  #                      distance
+                }
+
+        except Exception as e:
+
+            print("Sensor error:", e)
+
+        time.sleep(0.05)
+
+
+# ============================================================
+# HOME
+# ============================================================
+
+@app.route("/")
+def index():
+
+    return render_template(
+        "index.html"
+    )
+
+
+# ============================================================
+# DRIVE
+# ============================================================
+
+@app.route(
+    "/drive/<command>",
+    methods=["POST"]
+)
+def drive(command):
+
+    global current_command
+
+    commands = {
+
+        "forward":
+            robot.forward,
+
+        "backward":
+            robot.reverse,
+
+        "left":
+            robot.left,
+
+        "right":
+            robot.right,
+
+        "stop":
+            robot.stop
+    }
+
+    if command not in commands:
+
+        return jsonify({
+            "success": False,
+            "error": "Invalid command"
+        }), 400
+
+
+    with robot_lock:
+
+        try:
+
+            commands[command]()
+
+            current_command = command
+
+        except Exception as e:
+
+            print(
+                "Motor error:",
+                e
+            )
+
+            try:
+                robot.stop()
+            except:
+                pass
+
+            current_command = "stop"
+
+            return jsonify({
+                "success": False,
+                "error": str(e)
+            }), 500
+
+
+    return jsonify({
+
+        "success": True,
+
+        "command":
+            current_command
+    })
+
+@app.route("/brush/on", methods=["POST"])
+def brush_on():
+    global brush_state
+
+    try:
+        brush.start()
+        brush_state = True
+
+        return jsonify({
+            "success": True,
+            "brush": True
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/brush/off", methods=["POST"])
+def brush_off():
+    global brush_state
+
+    try:
+        brush.stop()
+        brush_state = False
+
+        return jsonify({
+            "success": True,
+            "brush": False
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+# ============================================================
+# SENSOR DATA
+# ============================================================
+
+@app.route("/pump/on", methods=["POST"])
+def pump_on():
+    global pump_state
+
+    try:
+        # Relay is already ON after initialization.
+        pump = PumpRelay(pin=17)
+        pump_state = True
+
+        return jsonify({
+            "success": True,
+            "pump": True
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route("/pump/off", methods=["POST"])
+def pump_off():
+    global pump_state
+
+    try:
+        pump.stop()
+        pump_state = False
+
+        return jsonify({
+            "success": True,
+            "pump": False
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/sensors")
+def sensors():
+
+    with sensor_lock:
+
+        data = {
+
+            "acceleration":
+                sensor_data["acceleration"].copy(),
+
+            "gyroscope":
+                sensor_data["gyroscope"].copy(),
+
+            "temperature":
+                sensor_data["temperature"],
+
+            "tof":
+                sensor_data["tof"]
+        }
+
+    return jsonify(data)
+
+
+# ============================================================
+# ROBOT STATUS
+# ============================================================
+
+@app.route("/status")
+def status():
+
+    return jsonify({
+
+        "command":
+            current_command
+    })
+
+
+# ============================================================
+# SHUTDOWN
+# ============================================================
+
+def shutdown():
+
+    print()
+    print("Shutting down robot...")
+
+    try:
+
+        with robot_lock:
+            robot.stop()
+
+    except Exception as e:
+
+        print(
+            "Robot stop error:",
+            e
+        )
+
+    try:
+
+        robot.close()
+
+    except Exception as e:
+
+        print(
+            "Robot close error:",
+            e
+        )
+
+    try:
+
+        imu.close()
+
+    except Exception as e:
+
+        print(
+            "IMU close error:",
+            e
+        )
+
+    try:
+
+        tof.close()
+
+    except Exception as e:
+
+        print(
+            "ToF close error:",
+            e
+        )
+
+    print("Hardware closed.")
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+
+    sensor_thread = threading.Thread(
+        target=sensor_loop,
+        daemon=True
+    )
+
+    sensor_thread.start()
+
+    print()
+    print("==============================")
+    print("     SOLAR ROBOT SERVER")
+    print("==============================")
+    print()
+    print("Open from mobile:")
+    print()
+    print("http://<RASPBERRY_PI_IP>:5000")
+    print()
+
+    try:
+
+        app.run(
+            host="0.0.0.0",
+            port=5000,
+            debug=False,
+            threaded=True
+        )
+
+    except KeyboardInterrupt:
+
+        print("\nKeyboard interrupt.")
+
+    finally:
+
+        shutdown()
+
+Yes. The cleanest approach is to keep your existing Flask server as the main application and add an AutonomousController running in its own thread.
+
+The important architecture will be:
+                         Flask
+                           │
+          ┌────────────────┼─────────────────┐
+          │                │                 │
+       Manual           Sensors          Status/API
+       Drive              │                 │
+          │                │                 │
+          └──────────┬─────┴─────────────────┘
+                     │
+                 SolarRobot
+                     │
+              ┌──────┴──────┐
+              │             │
+          Manual mode   Autonomous mode
+                            │
+                         Camera
+                            │
+                         15 FPS
+                            │
+                         Model
+                            │
+                        3 / 5 filter
+                            │
+                   Movement decision
+                            │
+                       SolarRobot
+
+I would also make manual and autonomous control mutually exclusive. When autonomous mode is running, a manual /drive/... command should first stop the autonomous controller and then execute the manual command. This prevents two threads from simultaneously commanding the motors.
+
+Below is the integrated version.
+from flask import Flask, render_template, jsonify
+import threading
+import time
+from collections import deque
+
+import cv2
+import numpy as np
+import tensorflow as tf
+
+from motors.drive_final import SolarRobot
+from motors.brush_final import RMCS2304Motor
+from sensors.mpu6050 import MPU6050
+from sensors.tof import ToF
+from sensors.relay import PumpRelay
+
+
+# ============================================================
+# FLASK
+# ============================================================
+
+app = Flask(__name__)
+
+
+# ============================================================
+# HARDWARE
+There is one bug in your original code that we should fix
+
+Your original pump implementation has:
+@app.route("/pump/on", methods=["POST"])
+def pump_on():
+    ...
+    pump = PumpRelay(pin=17)
+
+but /pump/off does:
+pump.stop()
+
+That pump is local to pump_on(), so /pump/off cannot reliably access the same object.
+
+Instead, initialize it once with the other hardware:
+print("Initializing pump...")
+
+pump = PumpRelay(pin=17)
+
+pump_state = True
+
+Then:
+@app.route("/pump/on", methods=["POST"])
+def pump_on():
+
+    global pump_state
+
+    try:
+
+        pump.start()
+
+        pump_state = True
+
+        return jsonify({
+            "success": True,
+            "pump": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+and:
+@app.route("/pump/off", methods=["POST"])
+def pump_off():
+
+    global pump_state
+
+    try:
+
+        pump.stop()
+
+        pump_state = False
+
+        return jsonify({
+            "success": True,
+            "pump": False
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+And shutdown should also do:
+try:
+    pump.stop()
+except Exception:
+    pass
+How the web interface will control autonomous mode
+
+You now have:
+POST /autonomous/on
+
+to start autonomous navigation.
+POST /autonomous/off
+
+to stop it.
+
+And:
+GET /autonomous/status
+
+returns something like:
+
+{
+    "running": true,
+    "prediction": "left",
+    "confidence": 0.91,
+    "decision": "left",
+    "previous_turn": "left",
+    "prediction_history": [
+        "left",
+        "left",
+        "forward",
+        "left",
+        "left"
+    ]
+}
+
+So your index.html can have an AUTONOMOUS ON/OFF switch and display:
+Mode: AUTONOMOUS
+
+AI: LEFT
+Confidence: 91%
+
+Last 5:
+LEFT LEFT FORWARD LEFT LEFT
+
+Decision:
+LEFT
+
+Previous Turn:
+LEFT
+
+That will make debugging on the actual solar panel much easier.
+One important architectural point
+
+I intentionally didn't put the AI navigation inside the Flask request handler.
+
+This would be bad:
+@app.route("/autonomous/on")
+def autonomous_on():
+    while True:
+        frame = camera.read()
+        model.predict(frame)
+        robot.forward()
+
+because the HTTP request would never finish.
+
+Instead:
+/autonomous/on
+       ↓
+start thread
+       ↓
+return HTTP response immediately
+       ↓
+                    Autonomous thread
+                           ↓
+                       camera
+                           ↓
+                        model
+                           ↓
+                       motors
+
+This means your mobile interface remains responsive while the robot is autonomously driving.
+
+Next, I would modify your existing index.html to add the Autonomous toggle + live AI prediction/confidence + 5-frame decision display, while keeping your existing manual controls, brush, pump, IMU and status UI.
+Pasted markdown(2).mdHTML
+This is existing index.html
+
+Yes. I reviewed the existing index.html. It already has the manual D-pad, brush/pump controls, sensor panel, and safety handling, so we should extend it rather than redesign it.
+
+I would add:
+
+    AUTO / MANUAL switch
+    Live AI prediction
+    AI confidence
+    Last 5 predictions
+    Confirmed decision
+    Previous turn
+    Autonomous mode automatically disables manual D-pad
+    Turning autonomous mode OFF immediately stops the robot
+    Keep your existing brush/pump controls
+    Keep your existing manual press-and-hold controls
+    Fix the existing sensor JavaScript to match the Flask /sensors response
+
+Your current manual controls already use pointer events for press-and-hold and stop on release/cancel.
+Replace your index.html with this
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,
+             initial-scale=1.0,
+             maximum-scale=1.0,
+             user-scalable=no"
+>
+
+<title>Solar Robot</title>
+
+
+<style>
+
+/* =========================================================
+   GLOBAL
+   ========================================================= */
+
+* {
+
+    box-sizing: border-box;
+
+    -webkit-tap-highlight-color: transparent;
+}
+
+
+html,
+body {
+
+    margin: 0;
+
+    padding: 0;
+
+    width: 100%;
+
+    height: 100%;
+
+    overflow: hidden;
+
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
+
+    background: #111;
+
+    color: white;
+
+    touch-action: none;
+}
+
+
+/* =========================================================
+   MAIN
+   ========================================================= */
+
+.container {
+
+    width: 100%;
+
+    height: 100%;
+
+    display: flex;
+
+    flex-direction: column;
+
+    position: relative;
+}
+
+
+/* =========================================================
+   SENSOR PANEL
+   ========================================================= */
+
+.sensor-panel {
+
+    position: absolute;
+
+    top: 15px;
+
+    left: 15px;
+
+    width: 220px;
+
+    background: rgba(20,20,20,0.90);
+
+    border-radius: 15px;
+
+    padding: 14px;
+
+    z-index: 100;
+
+    box-shadow:
+        0 5px 20px rgba(0,0,0,0.4);
+
+    backdrop-filter: blur(10px);
+}
+
+
+.sensor-title {
+
+    font-size: 15px;
+
+    font-weight: bold;
+
+    margin-bottom: 8px;
+}
+
+
+.sensor-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    font-size: 13px;
+
+    margin: 4px 0;
+}
+
+
+.sensor-section {
+
+    margin-top: 8px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid #333;
+}
+
+
+.sensor-label {
+
+    color: #999;
+}
+
+
+.sensor-value {
+
+    font-family: monospace;
+}
+
+
+/* =========================================================
+   AUTONOMOUS PANEL
+   ========================================================= */
+
+.autonomous-panel {
+
+    position: absolute;
+
+    top: 15px;
+
+    right: 15px;
+
+    width: 260px;
+
+    background: rgba(20,20,20,0.92);
+
+    border-radius: 15px;
+
+    padding: 14px;
+
+    z-index: 100;
+
+    box-shadow:
+        0 5px 20px rgba(0,0,0,0.4);
+
+    backdrop-filter: blur(10px);
+}
+
+
+.autonomous-title {
+
+    font-size: 15px;
+
+    font-weight: bold;
+
+    margin-bottom: 10px;
+}
+
+
+.auto-row {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    font-size: 13px;
+
+    margin: 5px 0;
+}
+
+
+.auto-label {
+
+    color: #999;
+}
+
+
+.auto-value {
+
+    font-family: monospace;
+
+    font-weight: bold;
+}
+
+
+.auto-prediction {
+
+    font-size: 20px;
+
+    margin-top: 8px;
+
+    margin-bottom: 4px;
+
+    font-weight: bold;
+}
+
+
+.auto-confidence {
+
+    color: #aaa;
+
+    font-family: monospace;
+}
+
+
+.prediction-history {
+
+    margin-top: 10px;
+
+    padding-top: 8px;
+
+    border-top: 1px solid #333;
+
+    font-size: 12px;
+
+    color: #aaa;
+
+    line-height: 1.5;
+}
+
+
+/* =========================================================
+   MODE SWITCH
+   ========================================================= */
+
+.mode-control {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 12px 16px;
+
+    margin: 12px;
+
+    border-radius: 14px;
+
+    background: rgba(255, 255, 255, 0.08);
+}
+
+
+.mode-control span {
+
+    font-size: 18px;
+
+    font-weight: 600;
+}
+
+
+.switch {
+
+    width: 58px;
+
+    height: 32px;
+
+    border: none;
+
+    border-radius: 20px;
+
+    padding: 3px;
+
+    background: #555;
+
+    cursor: pointer;
+
+    transition: 0.2s;
+}
+
+
+.switch-knob {
+
+    display: block;
+
+    width: 26px;
+
+    height: 26px;
+
+    border-radius: 50%;
+
+    background: white;
+
+    transform: translateX(0);
+
+    transition: 0.2s;
+}
+
+
+.switch.on {
+
+    background: #2ecc71;
+}
+
+
+.switch.on .switch-knob {
+
+    transform: translateX(26px);
+}
+
+
+.switch.auto {
+
+    background: #e67e22;
+}
+
+
+.switch.auto .switch-knob {
+
+    transform: translateX(26px);
+}
+
+
+/* =========================================================
+   DEVICE CONTROLS
+   ========================================================= */
+
+.device-control {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    padding: 12px 16px;
+
+    margin: 12px;
+
+    border-radius: 14px;
+
+    background: rgba(255, 255, 255, 0.08);
+}
+
+
+.device-control span {
+
+    font-size: 18px;
+
+    font-weight: 600;
+}
+
+
+/* =========================================================
+   MOVEMENT AREA
+   ========================================================= */
+
+.controls {
+
+    width: 100%;
+
+    height: 100%;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+}
+
+
+/* =========================================================
+   D-PAD
+   ========================================================= */
+
+.dpad {
+
+    width: min(85vw, 360px);
+
+    height: min(85vw, 360px);
+
+    display: grid;
+
+    grid-template-columns: 1fr 1fr 1fr;
+
+    grid-template-rows: 1fr 1fr 1fr;
+
+    gap: 12px;
+}
+
+
+.button {
+
+    border: none;
+
+    border-radius: 25px;
+
+    background: #2a2a2a;
+
+    color: white;
+
+    font-size: 42px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    user-select: none;
+
+    -webkit-user-select: none;
+
+    touch-action: none;
+
+    transition:
+        transform 0.05s,
+        background 0.05s;
+}
+
+
+.button:active {
+
+    transform: scale(0.94);
+
+    background: #555;
+}
+
+
+.button.active {
+
+    background: #666;
+
+    transform: scale(0.94);
+}
+
+
+.button.disabled {
+
+    opacity: 0.25;
+
+    pointer-events: none;
+}
+
+
+.forward {
+
+    grid-column: 2;
+
+    grid-row: 1;
+}
+
+
+.left {
+
+    grid-column: 1;
+
+    grid-row: 2;
+}
+
+
+.right {
+
+    grid-column: 3;
+
+    grid-row: 2;
+}
+
+
+.backward {
+
+    grid-column: 2;
+
+    grid-row: 3;
+}
+
+
+/* =========================================================
+   STATUS
+   ========================================================= */
+
+.status {
+
+    position: absolute;
+
+    bottom: 15px;
+
+    left: 50%;
+
+    transform: translateX(-50%);
+
+    padding: 8px 18px;
+
+    background: rgba(20,20,20,0.9);
+
+    border-radius: 20px;
+
+    font-size: 13px;
+
+    color: #aaa;
+
+    white-space: nowrap;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 700px) {
+
+    .sensor-panel {
+
+        width: 180px;
+
+        font-size: 11px;
+
+        padding: 10px;
+    }
+
+
+    .autonomous-panel {
+
+        width: 190px;
+
+        padding: 10px;
+
+        right: 10px;
+
+        top: 10px;
+    }
+
+
+    .autonomous-title {
+
+        font-size: 13px;
+    }
+
+
+    .auto-row {
+
+        font-size: 11px;
+    }
+
+
+    .auto-prediction {
+
+        font-size: 17px;
+    }
+
+
+    .sensor-panel {
+
+        top: 10px;
+
+        left: 10px;
+    }
+
+}
+
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+<!-- =====================================================
+     SENSOR WINDOW
+     ===================================================== -->
+
+<div class="sensor-panel">
+
+    <div class="sensor-title">
+        ROBOT SENSORS
+    </div>
+
+
+    <div class="sensor-section">
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                AX
+            </span>
+
+            <span id="ax" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                AY
+            </span>
+
+            <span id="ay" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                AZ
+            </span>
+
+            <span id="az" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="sensor-section">
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                GX
+            </span>
+
+            <span id="gx" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                GY
+            </span>
+
+            <span id="gy" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                GZ
+            </span>
+
+            <span id="gz" class="sensor-value">
+                --
+            </span>
+
+        </div>
+
+    </div>
+
+
+    <div class="sensor-section">
+
+        <div class="sensor-row">
+
+            <span class="sensor-label">
+                TOF
+            </span>
+
+            <span id="tof" class="sensor-value">
+                -- mm
+            </span>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     AUTONOMOUS PANEL
+     ===================================================== -->
+
+<div class="autonomous-panel">
+
+    <div class="autonomous-title">
+        AUTONOMOUS NAVIGATION
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            MODE
+        </span>
+
+        <span
+            id="autoMode"
+            class="auto-value"
+        >
+            MANUAL
+        </span>
+
+    </div>
+
+
+    <div
+        id="autoPrediction"
+        class="auto-prediction"
+    >
+        --
+    </div>
+
+
+    <div
+        id="autoConfidence"
+        class="auto-confidence"
+    >
+        Confidence: --
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            Decision
+        </span>
+
+        <span
+            id="autoDecision"
+            class="auto-value"
+        >
+            --
+        </span>
+
+    </div>
+
+
+    <div class="auto-row">
+
+        <span class="auto-label">
+            Previous Turn
+        </span>
+
+        <span
+            id="previousTurn"
+            class="auto-value"
+        >
+            --
+        </span>
+
+    </div>
+
+
+    <div
+        id="predictionHistory"
+        class="prediction-history"
+    >
+        Last 5:
+        --
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     MOVEMENT
+     ===================================================== -->
+
+<div class="controls">
+
+    <div class="dpad">
+
+
+        <button
+            class="button forward"
+            data-command="forward"
+        >
+            ▲
+        </button>
+
+
+        <button
+            class="button left"
+            data-command="left"
+        >
+            ◀
+        </button>
+
+
+        <button
+            class="button right"
+            data-command="right"
+        >
+            ▶
+        </button>
+
+
+        <button
+            class="button backward"
+            data-command="backward"
+        >
+            ▼
+        </button>
+
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     MODE CONTROL
+     ===================================================== -->
+
+<div class="mode-control">
+
+    <span>
+        Autonomous
+    </span>
+
+
+    <button
+        id="autonomousSwitch"
+        class="switch"
+        type="button"
+        aria-pressed="false"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     BRUSH
+     ===================================================== -->
+
+<div class="device-control">
+
+    <span>
+        Brush
+    </span>
+
+
+    <button
+        id="brushSwitch"
+        class="switch"
+        type="button"
+        aria-pressed="false"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     PUMP
+     ===================================================== -->
+
+<div class="device-control">
+
+    <span>
+        Pump
+    </span>
+
+
+    <button
+        id="pumpSwitch"
+        class="switch on"
+        type="button"
+        aria-pressed="true"
+    >
+
+        <span class="switch-knob"></span>
+
+    </button>
+
+</div>
+
+
+<!-- =====================================================
+     STATUS
+     ===================================================== -->
+
+<div
+    id="status"
+    class="status"
+>
+    STOPPED
+</div>
+
+
+</div>
+
+
+<script>
+
+
+/* =========================================================
+   GLOBAL STATE
+   ========================================================= */
+
+let activeButton = null;
+
+let activeCommand = null;
+
+let autonomous = false;
+
+
+/* =========================================================
+   SEND MANUAL COMMAND
+   ========================================================= */
+
+function sendCommand(command) {
+
+    fetch(
+        "/drive/" + command,
+        {
+            method: "POST"
+        }
+    )
+
+    .then(
+        response => response.json()
+    )
+
+    .then(
+        data => {
+
+            if (!data.success) {
+
+                console.error(
+                    data.error
+                );
+
+            }
+
+        }
+    )
+
+    .catch(
+        error => {
+
+            console.error(
+                error
+            );
+
+        }
+    );
+}
+
+
+/* =========================================================
+   START MANUAL MOVEMENT
+   ========================================================= */
+
+function startMovement(button) {
+
+
+    /* -----------------------------------------------
+       Autonomous mode blocks manual movement
+       ----------------------------------------------- */
+
+    if (autonomous) {
+
+        return;
+
+    }
+
+
+    /* -----------------------------------------------
+       Only one movement at a time
+       ----------------------------------------------- */
+
+    if (activeButton !== null) {
+
+        return;
+
+    }
+
+
+    activeButton = button;
+
+    activeCommand =
+        button.dataset.command;
+
+
+    button.classList.add(
+        "active"
+    );
+
+
+    sendCommand(
+        activeCommand
+    );
+
+
+    document
+        .getElementById("status")
+        .innerText =
+        activeCommand.toUpperCase();
+
+}
+
+
+/* =========================================================
+   STOP MANUAL MOVEMENT
+   ========================================================= */
+
+function stopMovement(button) {
+
+
+    if (button !== activeButton) {
+
+        return;
+
+    }
+
+
+    button.classList.remove(
+        "active"
+    );
+
+
+    activeButton = null;
+
+    activeCommand = null;
+
+
+    sendCommand(
+        "stop"
+    );
+
+
+    document
+        .getElementById("status")
+        .innerText =
+        "STOPPED";
+
+}
+
+
+/* =========================================================
+   AUTONOMOUS SWITCH
+   ========================================================= */
+
+const autonomousSwitch =
+    document.getElementById(
+        "autonomousSwitch"
+    );
+
+
+const autoMode =
+    document.getElementById(
+        "autoMode"
+    );
+
+
+autonomousSwitch.addEventListener(
+    "click",
+    async () => {
+
+        const newState =
+            !autonomous;
+
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/autonomous/on"
+                        : "/autonomous/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Autonomous command failed"
+                );
+
+            }
+
+
+            autonomous =
+                newState;
+
+
+            autonomousSwitch.classList.toggle(
+                "auto",
+                autonomous
+            );
+
+
+            autonomousSwitch.setAttribute(
+                "aria-pressed",
+                autonomous
+                    ? "true"
+                    : "false"
+            );
+
+
+            autoMode.innerText =
+                autonomous
+                    ? "AUTONOMOUS"
+                    : "MANUAL";
+
+
+            if (autonomous) {
+
+                document
+                    .getElementById("status")
+                    .innerText =
+                    "AUTONOMOUS";
+
+            }
+            else {
+
+                document
+                    .getElementById("status")
+                    .innerText =
+                    "STOPPED";
+
+            }
+
+
+        }
+        catch (error) {
+
+            console.error(
+                "Autonomous error:",
+                error
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   BRUSH
+   ========================================================= */
+
+const brushSwitch =
+    document.getElementById(
+        "brushSwitch"
+    );
+
+
+let brushOn = false;
+
+
+brushSwitch.addEventListener(
+    "click",
+    async () => {
+
+        const newState =
+            !brushOn;
+
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/brush/on"
+                        : "/brush/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Brush command failed"
+                );
+
+            }
+
+
+            brushOn =
+                data.brush;
+
+
+            brushSwitch.classList.toggle(
+                "on",
+                brushOn
+            );
+
+
+            brushSwitch.setAttribute(
+                "aria-pressed",
+                brushOn
+                    ? "true"
+                    : "false"
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Brush error:",
+                error
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   PUMP
+   ========================================================= */
+
+const pumpSwitch =
+    document.getElementById(
+        "pumpSwitch"
+    );
+
+
+let pumpOn = true;
+
+
+pumpSwitch.addEventListener(
+    "click",
+    async () => {
+
+        const newState =
+            !pumpOn;
+
+
+        try {
+
+            const response =
+                await fetch(
+
+                    newState
+                        ? "/pump/on"
+                        : "/pump/off",
+
+                    {
+                        method: "POST"
+                    }
+
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.success) {
+
+                throw new Error(
+                    data.error ||
+                    "Pump command failed"
+                );
+
+            }
+
+
+            pumpOn =
+                data.pump;
+
+
+            pumpSwitch.classList.toggle(
+                "on",
+                pumpOn
+            );
+
+
+            pumpSwitch.setAttribute(
+                "aria-pressed",
+                pumpOn
+                    ? "true"
+                    : "false"
+            );
+
+        }
+        catch (error) {
+
+            console.error(
+                "Pump error:",
+                error
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   TOUCH / MOUSE EVENTS
+   ========================================================= */
+
+const buttons =
+    document.querySelectorAll(
+        ".button"
+    );
+
+
+buttons.forEach(
+    button => {
+
+
+        /* -----------------------------------------------
+           POINTER DOWN
+           ----------------------------------------------- */
+
+        button.addEventListener(
+            "pointerdown",
+            event => {
+
+                event.preventDefault();
+
+
+                if (autonomous) {
+
+                    return;
+
+                }
+
+
+                button.setPointerCapture(
+                    event.pointerId
+                );
+
+
+                startMovement(
+                    button
+                );
+
+            }
+        );
+
+
+        /* -----------------------------------------------
+           POINTER UP
+           ----------------------------------------------- */
+
+        button.addEventListener(
+            "pointerup",
+            event => {
+
+                event.preventDefault();
+
+                stopMovement(
+                    button
+                );
+
+            }
+        );
+
+
+        /* -----------------------------------------------
+           POINTER CANCEL
+           ----------------------------------------------- */
+
+        button.addEventListener(
+            "pointercancel",
+            event => {
+
+                event.preventDefault();
+
+                stopMovement(
+                    button
+                );
+
+            }
+        );
+
+
+        /* -----------------------------------------------
+           POINTER LEAVE
+           ----------------------------------------------- */
+
+        button.addEventListener(
+            "pointerleave",
+            event => {
+
+                if (
+                    event.buttons === 0
+                ) {
+
+                    stopMovement(
+                        button
+                    );
+
+                }
+
+            }
+        );
+
+    }
+);
+
+
+/* =========================================================
+   BROWSER FOCUS SAFETY
+   ========================================================= */
+
+window.addEventListener(
+    "blur",
+    () => {
+
+
+        if (
+            activeButton !== null
+        ) {
+
+            activeButton
+                .classList
+                .remove("active");
+
+
+            activeButton = null;
+
+            activeCommand = null;
+
+
+            sendCommand(
+                "stop"
+            );
+
+
+            document
+                .getElementById("status")
+                .innerText =
+                "STOPPED";
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   PAGE VISIBILITY SAFETY
+   ========================================================= */
+
+document.addEventListener(
+    "visibilitychange",
+    () => {
+
+
+        if (
+            document.hidden &&
+            activeButton !== null
+        ) {
+
+            activeButton
+                .classList
+                .remove("active");
+
+
+            activeButton = null;
+
+            activeCommand = null;
+
+
+            sendCommand(
+                "stop"
+            );
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   SENSOR UPDATE
+   ========================================================= */
+
+async function updateSensors() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/sensors"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /*
+         * Flask returns:
+         *
+         * acceleration
+         * gyroscope
+         * temperature
+         * tof
+         */
+
+
+        document
+            .getElementById("ax")
+            .innerText =
+            Number(
+                data.acceleration.x
+            ).toFixed(2);
+
+
+        document
+            .getElementById("ay")
+            .innerText =
+            Number(
+                data.acceleration.y
+            ).toFixed(2);
+
+
+        document
+            .getElementById("az")
+            .innerText =
+            Number(
+                data.acceleration.z
+            ).toFixed(2);
+
+
+        document
+            .getElementById("gx")
+            .innerText =
+            Number(
+                data.gyroscope.x
+            ).toFixed(2);
+
+
+        document
+            .getElementById("gy")
+            .innerText =
+            Number(
+                data.gyroscope.y
+            ).toFixed(2);
+
+
+        document
+            .getElementById("gz")
+            .innerText =
+            Number(
+                data.gyroscope.z
+            ).toFixed(2);
+
+
+        if (
+            data.tof !== undefined &&
+            data.tof !== null
+        ) {
+
+            document
+                .getElementById("tof")
+                .innerText =
+                Number(
+                    data.tof
+                ).toFixed(0)
+                + " mm";
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Sensor error:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   AUTONOMOUS STATUS UPDATE
+   ========================================================= */
+
+async function updateAutonomousStatus() {
+
+    try {
+
+        const response =
+            await fetch(
+                "/autonomous/status"
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /* -----------------------------------------------
+           Autonomous state
+           ----------------------------------------------- */
+
+        autonomous =
+            data.autonomous;
+
+
+        autonomousSwitch.classList.toggle(
+            "auto",
+            autonomous
+        );
+
+
+        autonomousSwitch.setAttribute(
+            "aria-pressed",
+            autonomous
+                ? "true"
+                : "false"
+        );
+
+
+        autoMode.innerText =
+            autonomous
+                ? "AUTONOMOUS"
+                : "MANUAL";
+
+
+        /* -----------------------------------------------
+           Prediction
+           ----------------------------------------------- */
+
+        const prediction =
+            data.prediction || "--";
+
+
+        document
+            .getElementById(
+                "autoPrediction"
+            )
+            .innerText =
+            prediction.toUpperCase();
+
+
+        /* -----------------------------------------------
+           Confidence
+           ----------------------------------------------- */
+
+        const confidence =
+            Number(
+                data.confidence || 0
+            );
+
+
+        document
+            .getElementById(
+                "autoConfidence"
+            )
+            .innerText =
+            "Confidence: " +
+            (confidence * 100)
+                .toFixed(1) +
+            "%";
+
+
+        /* -----------------------------------------------
+           Decision
+           ----------------------------------------------- */
+
+        document
+            .getElementById(
+                "autoDecision"
+            )
+            .innerText =
+            (
+                data.decision || "--"
+            ).toUpperCase();
+
+
+        /* -----------------------------------------------
+           Previous turn
+           ----------------------------------------------- */
+
+        document
+            .getElementById(
+                "previousTurn"
+            )
+            .innerText =
+            (
+                data.previous_turn || "--"
+            ).toUpperCase();
+
+
+        /* -----------------------------------------------
+           Prediction history
+           ----------------------------------------------- */
+
+        const history =
+            data.prediction_history || [];
+
+
+        if (history.length === 0) {
+
+            document
+                .getElementById(
+                    "predictionHistory"
+                )
+                .innerText =
+                "Last 5: --";
+
+        }
+        else {
+
+            document
+                .getElementById(
+                    "predictionHistory"
+                )
+                .innerText =
+                "Last 5: " +
+                history
+                    .map(
+                        item =>
+                            item.toUpperCase()
+                    )
+                    .join("  ");
+
+        }
+
+
+        /* -----------------------------------------------
+           Status text
+           ----------------------------------------------- */
+
+        if (autonomous) {
+
+            document
+                .getElementById(
+                    "status"
+                )
+                .innerText =
+                "AUTONOMOUS";
+
+        }
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Autonomous status error:",
+            error
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   UPDATE SENSOR DATA
+   ========================================================= */
+
+setInterval(
+    updateSensors,
+    100
+);
+
+
+updateSensors();
+
+
+/* =========================================================
+   UPDATE AI STATUS
+   ========================================================= */
+
+setInterval(
+    updateAutonomousStatus,
+    100
+);
+
+
+updateAutonomousStatus();
+
+
+</script>
+
+
+</body>
+
+</html>
+
+What changed
+
+Your original page already has the D-pad and manual press/release behavior. The new version keeps that and adds an autonomous control layer.
+
+The UI becomes roughly:
+┌───────────────┐                  ┌──────────────────────┐
+│ ROBOT SENSORS │                  │ AUTONOMOUS NAVIGATION│
+│               │                  │                      │
+│ AX   ...      │                  │ MODE: AUTONOMOUS     │
+│ AY   ...      │                  │ LEFT                 │
+│ AZ   ...      │                  │ Confidence: 91.2%    │
+│               │                  │ Decision: LEFT       │
+│ GX   ...      │                  │ Previous: RIGHT     │
+│ GY   ...      │                  │ Last 5:              │
+│ GZ   ...      │                  │ L L F L L            │
+│               │                  │                      │
+│ TOF  ...      │                  └──────────────────────┘
+└───────────────┘
+
+                     ▲
+                 ◀       ▶
+                     ▼
+
+             Autonomous [ ● ]
+             Brush      [ ○ ]
+             Pump       [ ● ]
+
+                  AUTONOMOUS
+One important fix I made
+
+Your existing JavaScript expects:
+
+data.imu.ax
+data.imu.ay
+data.imu.az
+
+and:
+
+data.tof.distance
+
+but the Flask code you gave returns:
+{
+    "acceleration": {...},
+    "gyroscope": {...},
+    "temperature": ...,
+    "tof": ...
+}
+
+So the old frontend/backend structures don't match. The version above uses:
+
+data.acceleration.x
+data.acceleration.y
+data.acceleration.z
+
+data.gyroscope.x
+data.gyroscope.y
+data.gyroscope.z
+
+data.tof
+
+which matches your Flask server.
+Autonomous behavior from the UI
+
+When you switch:
+Autonomous OFF → ON
+
+the browser sends:
+POST /autonomous/on
+
+The Flask server starts the autonomous thread.
+
+The browser then polls:
+GET /autonomous/status
+
+every 100 ms and displays the current AI state.
+
+If you turn autonomous OFF:
+POST /autonomous/off
+
+and the robot is immediately stopped.
+
+Also, if autonomous mode is active, pressing a D-pad button is ignored by the browser. This prevents an accidental manual command from fighting the autonomous controller.
+One thing I recommend changing in the Flask code before testing
+
+There is a race-condition/design issue in the previous Flask code I gave you: stop_autonomous() can return while the autonomous thread is still finishing its current model inference/probe.
+
+For a physical robot, I want the ownership of robot to be extremely clear:
+MANUAL MODE
+    ↓
+manual request owns robot
+
+AUTONOMOUS MODE
+    ↓
+autonomous thread owns robot
+
+So the next version should have a proper mode controller + motor watchdog, rather than relying only on autonomous_mode.
+
+Also, for the TURN probing, I would change the implementation before putting it on the solar panel. The current time-based:
+PROBE_TIME = 0.25
+
+is only a temporary test. Since your RMCS-2303 feedback is already working, we should use encoder position to return to exactly the previous position. That will make:
+center
+  ↓
+left probe
+  ↓
+EXACT center
+  ↓
+right probe
+  ↓
+EXACT center
+  ↓
+chosen direction
+
+much safer and more repeatable.
+Okay Now the main thing 
+ToF 
+When we are on Autonoumus mode
+we will continuously read the ToF data
+when we get large distance such as more than 5 cm for more than 3s then we will make robot stop go back some distance and do the turn event
+
+Yes. This should be treated as a navigation safety/edge event, independent of the AI prediction.
+
+The autonomous system will now have two decision sources:
+                    AUTONOMOUS MODE
+                          │
+              ┌───────────┴───────────┐
+              │                       │
+          AI Camera                  ToF
+           15 FPS                 continuous
+              │                       │
+         3 of 5 filter          > 50 mm
+              │                 continuously
+              │                    > 3 sec
+              │                       │
+              └───────────┬───────────┘
+                          │
+                    MOVEMENT CONTROL
+                          │
+                    ┌─────┴─────┐
+                    │           │
+                  normal      TOF EDGE
+                              EVENT
+                                 │
+                              STOP
+                                 │
+                              REVERSE
+                                 │
+                           TURN EVENT
+                                 │
+                           LEFT/RIGHT
+
+The important part is continuous ToF monitoring. I don't want it checked only once per AI frame because the AI inference time can vary.
+1. ToF condition
+
+We'll use:
+TOF_THRESHOLD_MM = 50
+TOF_TRIGGER_TIME = 3.0
+
+So:
+ToF = 48 mm → normal
+
+ToF = 52 mm
+        ↓
+timer starts
+
+52 mm → 1 sec
+52 mm → 2 sec
+52 mm → 3 sec
+        ↓
+TOF EVENT
+
+But:
+52 mm → 1.5 sec
+45 mm
+        ↓
+timer reset
+
+So a single noisy reading won't trigger the robot.
+2. Add these variables to Flask
+
+Near your autonomous configuration:
+# ============================================================
+# TOF AUTONOMOUS SAFETY
+# ============================================================
+
+TOF_THRESHOLD_MM = 50
+
+TOF_TRIGGER_TIME = 3.0
+
+# How far to reverse when a ToF event occurs.
+# Temporary time-based value.
+TOF_REVERSE_TIME = 0.40
+
+# ToF polling frequency
+TOF_POLL_INTERVAL = 0.05
+
+
+tof_trigger_start = None
+
+tof_event_lock = threading.Lock()
+
+tof_event_active = False
+3. Actually initialize your ToF
+
+Your current Flask code has:
+#tof = ToF()
+
+This needs to become:
+print("Initializing ToF...")
+
+tof = ToF()
+
+Otherwise the ToF code won't actually be running.
+4. Add ToF state to autonomous status
+
+Change:
+autonomous_status = {
+
+to include:
+autonomous_status = {
+
+    "running": False,
+
+    "prediction": "none",
+
+    "confidence": 0.0,
+
+    "decision": "none",
+
+    "previous_turn": None,
+
+    "prediction_history": [],
+
+    "error": None,
+
+    "tof_distance": 0,
+
+    "tof_timer": 0,
+
+    "tof_event": False
+}
+
+This means the web UI can eventually show:
+TOF: 73 mm
+TOF TIMER: 2.1 s
+TOF EVENT: NO
+5. Create the ToF monitor thread
+
+This is the important part.
+def tof_monitor_loop():
+
+    global tof_trigger_start
+    global tof_event_active
+
+    while True:
+
+        try:
+
+            # Only monitor during autonomous operation
+            if not autonomous_mode:
+
+                tof_trigger_start = None
+
+                time.sleep(
+                    TOF_POLL_INTERVAL
+                )
+
+                continue
+
+
+            # ------------------------------------------------
+            # Read ToF
+            # ------------------------------------------------
+
+            distance = tof.read_distance()
+
+
+            # ------------------------------------------------
+            # Store current distance
+            # ------------------------------------------------
+
+This checks approximately:
+20 times/second
+
+because:
+TOF_POLL_INTERVAL = 0.05
+6. Create the ToF event
+
+Now we need the actual behavior:
+ToF > 5cm for 3 sec
+        ↓
+STOP
+        ↓
+REVERSE some distance
+        ↓
+STOP
+        ↓
+TURN EVENT
+
+Add:
+def trigger_tof_event():
+
+    global tof_event_active
+    global previous_turn
+
+    print()
+    print(
+        "[AUTO] Executing ToF edge event..."
+    )
+
+    try:
+
+        # ----------------------------------------------------
+        # STOP
+        # ----------------------------------------------------
+
+        execute_motor_command(
+            "stop"
+        )
+
+        time.sleep(
+            0.15
+        )
+
+
+        # ----------------------------------------------------
+        # REVERSE
+        # ----------------------------------------------------
+
+        print(
+            "[AUTO] Reversing from edge..."
+        )
+
+        if not move_for(
+            "reverse",
+            TOF_REVERSE_TIME
+        ):
+
+            return
+
+
+        # ----------------------------------------------------
+        # STOP
+        # ----------------------------------------------------
+
+        execute_motor_command(
+7. But there is one important change to move_for()
+
+Our previous move_for() only stopped if the autonomous stop event was set.
+
+We also need it to respect the ToF event.
+
+Use:
+def move_for(direction, duration):
+
+    if autonomous_stop_event.is_set():
+
+        return False
+
+
+    print(
+        f"[AUTO] "
+        f"Moving {direction} "
+        f"for {duration:.2f}s"
+    )
+
+
+    execute_motor_command(
+        direction
+    )
+
+
+    start = time.monotonic()
+
+
+    while (
+        time.monotonic() - start
+        < duration
+    ):
+
+        if autonomous_stop_event.is_set():
+
+            execute_motor_command(
+                "stop"
+            )
+
+For now, this is fine because the ToF event itself is responsible for stopping and reversing.
+8. Prevent the normal AI loop from fighting ToF
+
+This is very important.
+
+Imagine:
+AI thread:
+    robot.forward()
+
+ToF thread:
+    robot.stop()
+    robot.reverse()
+
+Then the AI thread could immediately do:
+robot.forward()
+
+and undo the ToF maneuver.
+
+Therefore add this at the beginning of the autonomous loop.
+
+Inside:
+while not autonomous_stop_event.is_set():
+
+use:
+while not autonomous_stop_event.is_set():
+
+    if tof_event_active:
+
+        time.sleep(0.05)
+
+        continue
+
+So the autonomous AI controller gives control to the ToF event.
+9. There is an even better way
+
+I actually recommend using an explicit autonomous state:
+autonomous_state = "NORMAL"
+
+Possible states:
+NORMAL
+TOF_EVENT
+TURN_PROBE
+TURN_EXECUTE
+STOPPED
+
+Then:
+NORMAL
+   │
+   │ ToF > 50mm for 3s
+   ▼
+TOF_EVENT
+   │
+   ├── STOP
+   │
+   ├── REVERSE
+   │
+   ▼
+TURN_PROBE
+   │
+   ├── LEFT probe
+   ├── CENTER
+   ├── RIGHT probe
+   ├── CENTER
+   │
+   ▼
+TURN_EXECUTE
+   │
+   └── LEFT / RIGHT
+          │
+          ▼
+        NORMAL
+
+This is much safer than having multiple threads independently controlling the motors.
+10. One correction to your original ToF interpretation
+
+You said:
+
+    large distance such as more than 5 cm
+
+Assuming your ToF.read_distance() returns millimeters, then:
+50 mm
+
+is correct.
+
+So:
+distance > 50
+
+means:
+> 5 cm
+
+But there's something worth checking on the actual robot.
+
+If the ToF sensor is looking down toward the solar panel, a sudden large distance can mean:
+normal panel
+      ↓
+ToF ≈ 20-40 mm
+
+panel edge
+      ↓
+ToF > 50 mm
+
+That makes this a very useful physical edge detector, independent of the camera AI.
+11. The complete behavior
+
+With everything combined, your autonomous robot now works like this:
+                    START AUTO
+                        │
+                        ▼
+                 ┌─────────────┐
+                 │   NORMAL    │
+                 └──────┬──────┘
+                        │
+             ┌──────────┴──────────┐
+             │                     │
+          Camera                  ToF
+             │                     │
+          15 FPS              continuously
+             │                     │
+          3 / 5               > 50 mm
+             │                     │
+             │                  > 3 sec
+             │                     │
+             │                     ▼
+             │              ┌─────────────┐
+             │              │  TOF EVENT  │
+             │              └──────┬──────┘
+             │                     │
+             │                   STOP
+             │                     │
+             │                  REVERSE
+             │                     │
+             │                     ▼
+             │              ┌─────────────┐
+             │              │ TURN EVENT  │
+             │              └──────┬──────┘
+             │                     │
+             │                LEFT PROBE
+             │                     │
+             │                   CENTER
+             │                     │
+             │               RIGHT PROBE
+             │                     │
+             │                   CENTER
+             │                     │
+             │                     ▼
+             │              CHOOSE LEFT/RIGHT
+             │                     │
+             └─────────────────────┘
+One thing I would not do yet
+
+Don't use:
+TOF_REVERSE_TIME = 0.40
+
+as the final implementation.
+
+Since your RMCS-2303 encoder feedback is already working, we should eventually make it:
+Record encoder position
+        ↓
+Reverse X encoder counts
+        ↓
+Stop
+        ↓
+Run TURN event
+
+That will make the "go back some distance" precise, rather than depending on motor speed, battery voltage, surface friction, and load.
+
+Also, the ToF event should have priority over the AI. If ToF detects the edge condition, the robot must not continue following the camera prediction until the ToF maneuver is complete.
+okay what I want is when ToF makes decision thread of Autonomous should stop untill turn is complete
+
+Exactly. The ToF event should temporarily take ownership of the autonomous controller. The AI/autonomous decision loop should not capture frames, make decisions, or command motors while the ToF recovery + turn is happening.
+
+The clean design is:
+Autonomous Thread
+       │
+       ├── AI prediction
+       │
+       ├── normal movement
+       │
+       └── waits for ToF event
+                  │
+                  ▼
+             ToF detects
+             > 50 mm / 3 sec
+                  │
+                  ▼
+          SIGNAL AUTONOMOUS
+                  │
+                  ▼
+        ┌──────────────────┐
+        │ Autonomous waits │
+        └────────┬─────────┘
+                 │
+                 ▼
+             STOP
+                 │
+              REVERSE
+                 │
+            TURN EVENT
+                 │
+          LEFT/RIGHT PROBE
+                 │
+          EXECUTE TURN
+                 │
+                 ▼
+          TURN COMPLETE
+                 │
+                 ▼
+        Autonomous resumes
+I would use a threading.Event
+
+This is better than repeatedly checking a boolean.
+
+Add these global objects:
+# ============================================================
+# AUTONOMOUS / TOF SYNCHRONIZATION
+# ============================================================
+
+tof_event = threading.Event()
+
+turn_complete_event = threading.Event()
+
+The meanings are:
+tof_event
+    ToF says: "I need control of the robot"
+
+turn_complete_event
+    ToF recovery + turn is completely finished
+1. ToF thread
+
+The ToF thread should only detect the condition and signal the autonomous thread.
+
+It should NOT perform the turn itself.
+def tof_monitor_loop():
+
+    global tof_trigger_start
+
+    while True:
+
+        try:
+
+            # Only monitor during autonomous mode
+            if not autonomous_mode:
+
+                tof_trigger_start = None
+
+                time.sleep(0.05)
+
+                continue
+
+
+            distance = tof.read_distance()
+
+
+            update_autonomous_status(
+                tof_distance=distance
+            )
+
+
+            if distance is None:
+
+                tof_trigger_start = None
+
+                update_autonomous_status(
+                    tof_timer=0
+                )
+
+                time.sleep(0.05)
+
+                continue
+
+Notice what this thread doesn't do:
+robot.stop()
+robot.reverse()
+handle_turn()
+
+That's intentional.
+2. Autonomous thread handles the ToF event
+
+Now the autonomous thread becomes the only thread that controls the robot.
+
+At the beginning of your autonomous loop:
+while not autonomous_stop_event.is_set():
+
+change it to:
+while not autonomous_stop_event.is_set():
+
+    # ========================================================
+    # TOF EVENT HAS PRIORITY
+    # ========================================================
+
+    if tof_event.is_set():
+
+        handle_tof_event()
+
+        # Do not continue this iteration.
+        continue
+
+
+    # ========================================================
+    # NORMAL AI NAVIGATION
+    # ========================================================
+
+    ...
+
+So the sequence is:
+AI
+ ↓
+AI
+ ↓
+AI
+ ↓
+ToF event detected
+ ↓
+handle_tof_event()
+ ↓
+TURN COMPLETE
+ ↓
+AI resumes
+
+There is no AI command between the ToF event and turn completion.
+3. The ToF event handler
+
+Now create:
+def handle_tof_event():
+
+    global previous_turn
+
+    print()
+    print(
+        "================================"
+    )
+    print(
+        "[AUTO] HANDLING TOF EVENT"
+    )
+    print(
+        "================================"
+    )
+
+
+    # ========================================================
+    # Mark turn as active
+    # ========================================================
+
+    update_autonomous_status(
+        decision="tof_edge"
+    )
+
+
+    # ========================================================
+    # STOP
+    # ========================================================
+
+    execute_motor_command(
+        "stop"
+    )
+
+    time.sleep(0.15)
+
+
+    # ========================================================
+    # REVERSE
+    # ========================================================
+
+    print(
+        "[AUTO] Reversing from edge..."
+    )
+
+
+    if not move_for(
+        "reverse",
+        TOF_REVERSE_TIME
+    ):
+
+        execute_motor_command(
+            "stop"
+        )
+
+        tof_event.clear()
+
+        return
+
+
+    # ========================================================
+4. But there is one more important point
+
+You said:
+
+    Autonomous thread should stop until turn is complete
+
+With the above architecture, the autonomous thread is technically not stopped; it enters:
+handle_tof_event()
+
+and blocks there.
+
+That is actually what we want.
+
+While this function is executing:
+handle_tof_event()
+    ↓
+stop
+    ↓
+reverse
+    ↓
+handle_turn()
+    ↓
+left probe
+    ↓
+center
+    ↓
+right probe
+    ↓
+center
+    ↓
+execute final turn
+    ↓
+return
+
+the autonomous loop cannot reach:
+predict_navigation()
+
+or:
+robot.forward()
+
+until handle_tof_event() returns.
+
+So there is zero chance of the normal AI loop overriding the turn.
+5. Even better: use a state
+
+I'd also add:
+autonomous_state = "NORMAL"
+
+with:
+NORMAL
+TOF_RECOVERY
+TURN_PROBE
+TURN_EXECUTE
+
+Then the UI can show:
+AUTONOMOUS
+
+AI: TURN
+Confidence: 88%
+
+STATE:
+TOF RECOVERY
+
+TOF:
+73 mm
+
+Previous turn:
+LEFT
+
+During the turn:
+AUTONOMOUS
+
+STATE:
+TURN PROBE
+
+TOF:
+81 mm
+
+And once finished:
+AUTONOMOUS
+
+STATE:
+NORMAL
+
+AI:
+FORWARD
+
+This will be extremely useful when we're testing the robot on the actual panel.
+Final ownership model
+
+I recommend we make this rule absolute:
+Only the autonomous thread can command motors during autonomous mode.
+                  AUTONOMOUS THREAD
+                         │
+             ┌───────────┴───────────┐
+             │                       │
+         Normal AI              ToF event
+             │                       │
+             │                 STOP/REVERSE
+             │                       │
+             │                  TURN EVENT
+             │                       │
+             │                  LEFT/RIGHT
+             │                       │
+             └───────────┬───────────┘
+                         │
+                       MOTOR
+
+The ToF thread is only a sensor/trigger thread:
+ToF thread
+    │
+    └── tof_event.set()
+
+It never touches the motors.
+
+That is the architecture I would use for the robot. It eliminates the dangerous situation where the ToF thread says reverse() while the AI thread immediately says forward().
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+
+name="viewport"
+
+content="width=device-width,
+
+initial-scale=1.0,
+
+maximum-scale=1.0,
+
+user-scalable=no"
+
+>
+
+<title>Solar Robot</title>
+
+<style>
+
+* {
+
+box-sizing: border-box;
+
+-webkit-tap-highlight-color: transparent;
+
+}
+
+html,
+
+body {
+
+margin: 0;
+
+padding: 0;
+
+width: 100%;
+
+height: 100%;
+
+overflow: hidden;
+
+font-family:
+
+Arial,
+
+Helvetica,
+
+sans-serif;
+
+background: #111;
+
+color: white;
+
+touch-action: none;
+
+}
+
+/* =========================================================
+
+MAIN
+
+========================================================= */
+
+.container {
+
+width: 100%;
+
+height: 100%;
+
+display: flex;
+
+flex-direction: column;
+
+position: relative;
+
+}
+
+/* =========================================================
+
+SENSOR FLOATING WINDOW
+
+========================================================= */
+
+.sensor-panel {
+
+position: absolute;
+
+top: 15px;
+
+left: 15px;
+
+width: 220px;
+
+background: rgba(20,20,20,0.90);
+
+border-radius: 15px;
+
+padding: 14px;
+
+z-index: 100;
+
+box-shadow:
+
+0 5px 20px rgba(0,0,0,0.4);
+
+backdrop-filter: blur(10px);
+
+}
+
+.sensor-title {
+
+font-size: 15px;
+
+font-weight: bold;
+
+margin-bottom: 8px;
+
+}
+
+.sensor-row {
+
+display: flex;
+
+justify-content: space-between;
+
+font-size: 13px;
+
+margin: 4px 0;
+
+}
+
+.sensor-section {
+
+margin-top: 8px;
+
+padding-top: 8px;
+
+border-top: 1px solid #333;
+
+}
+
+.sensor-label {
+
+color: #999;
+
+}
+
+.sensor-value {
+
+font-family: monospace;
+
+}
+
+.brush-control {
+
+display: flex;
+
+align-items: center;
+
+justify-content: space-between;
+
+padding: 12px 16px;
+
+margin: 12px;
+
+border-radius: 14px;
+
+background: rgba(255, 255, 255, 0.08);
+
+}
+
+.brush-control span {
+
+font-size: 18px;
+
+font-weight: 600;
+
+}
+
+.switch {
+
+width: 58px;
+
+height: 32px;
+
+border: none;
+
+border-radius: 20px;
+
+padding: 3px;
+
+background: #555;
+
+cursor: pointer;
+
+transition: 0.2s;
+
+}
+
+.switch-knob {
+
+display: block;
+
+width: 26px;
+
+height: 26px;
+
+border-radius: 50%;
+
+background: white;
+
+transform: translateX(0);
+
+transition: 0.2s;
+
+}
+
+.switch.on {
+
+background: #2ecc71;
+
+}
+
+.switch.on .switch-knob {
+
+transform: translateX(26px);
+
+}
+
+/* =========================================================
+
+MOVEMENT AREA
+
+========================================================= */
+
+.controls {
+
+width: 100%;
+
+height: 100%;
+
+display: flex;
+
+align-items: center;
+
+justify-content: center;
+
+}
+
+/* =========================================================
+
+D-PAD
+
+========================================================= */
+
+.dpad {
+
+width: min(85vw, 360px);
+
+height: min(85vw, 360px);
+
+display: grid;
+
+grid-template-columns: 1fr 1fr 1fr;
+
+grid-template-rows: 1fr 1fr 1fr;
+
+gap: 12px;
+
+}
+
+.button {
+
+border: none;
+
+border-radius: 25px;
+
+background: #2a2a2a;
+
+color: white;
+
+font-size: 42px;
+
+display: flex;
+
+align-items: center;
+
+justify-content: center;
+
+user-select: none;
+
+-webkit-user-select: none;
+
+touch-action: none;
+
+transition:
+
+transform 0.05s,
+
+background 0.05s;
+
+}
+
+.button:active {
+
+transform: scale(0.94);
+
+background: #555;
+
+}
+
+.button.active {
+
+background: #666;
+
+transform: scale(0.94);
+
+}
+
+.forward {
+
+grid-column: 2;
+
+grid-row: 1;
+
+}
+
+.left {
+
+grid-column: 1;
+
+grid-row: 2;
+
+}
+
+.right {
+
+grid-column: 3;
+
+grid-row: 2;
+
+}
+
+.backward {
+
+grid-column: 2;
+
+grid-row: 3;
+
+}
+
+/* =========================================================
+
+STATUS
+
+========================================================= */
+
+.status {
+
+position: absolute;
+
+bottom: 15px;
+
+left: 50%;
+
+transform: translateX(-50%);
+
+padding: 8px 18px;
+
+background: rgba(20,20,20,0.9);
+
+border-radius: 20px;
+
+font-size: 13px;
+
+color: #aaa;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<!-- ================================================
+
+SENSOR WINDOW
+
+================================================ -->
+
+<div class="sensor-panel">
+
+<div class="sensor-title">
+
+ROBOT SENSORS
+
+</div>
+
+<div class="sensor-section">
+
+<div class="sensor-row">
+
+<span class="sensor-label">AX</span>
+
+<span id="ax" class="sensor-value">--</span>
+
+</div>
+
+<div class="sensor-row">
+
+<span class="sensor-label">AY</span>
+
+<span id="ay" class="sensor-value">--</span>
+
+</div>
+
+<div class="sensor-row">
+
+<span class="sensor-label">AZ</span>
+
+<span id="az" class="sensor-value">--</span>
+
+</div>
+
+</div>
+
+<div class="sensor-section">
+
+<div class="sensor-row">
+
+<span class="sensor-label">GX</span>
+
+<span id="gx" class="sensor-value">--</span>
+
+</div>
+
+<div class="sensor-row">
+
+<span class="sensor-label">GY</span>
+
+<span id="gy" class="sensor-value">--</span>
+
+</div>
+
+<div class="sensor-row">
+
+<span class="sensor-label">GZ</span>
+
+<span id="gz" class="sensor-value">--</span>
+
+</div>
+
+</div>
+
+<div class="sensor-section">
+
+<div class="sensor-row">
+
+<span class="sensor-label">
+
+TOF
+
+</span>
+
+<span
+
+id="tof"
+
+class="sensor-value"
+
+>
+
+-- mm
+
+</span>
+
+</div>
+
+</div>
+
+</div>
+
+<!-- ================================================
+
+CONTROLS
+
+================================================ -->
+
+<div class="controls">
+
+<div class="dpad">
+
+<button
+
+class="button forward"
+
+data-command="forward"
+
+>
+
+▲
+
+</button>
+
+<button
+
+class="button left"
+
+data-command="left"
+
+>
+
+◀
+
+</button>
+
+<button
+
+class="button right"
+
+data-command="right"
+
+>
+
+▶
+
+</button>
+
+<button
+
+class="button backward"
+
+data-command="backward"
+
+>
+
+▼
+
+</button>
+
+</div>
+
+</div>
+
+<div class="brush-control">
+
+<span>Brush</span>
+
+<button id="brushSwitch"
+
+class="switch"
+
+type="button"
+
+aria-pressed="false">
+
+<span class="switch-knob"></span>
+
+</button>
+
+</div>
+
+<div class="device-control">
+
+<span>Pump</span>
+
+<button id="pumpSwitch"
+
+class="switch on"
+
+type="button"
+
+aria-pressed="true">
+
+<span class="switch-knob"></span>
+
+</button>
+
+</div>
+
+<div
+
+id="status"
+
+class="status"
+
+>
+
+STOPPED
+
+</div>
+
+</div>
+
+<script>
+
+/* =========================================================
+
+DRIVE CONTROL
+
+========================================================= */
+
+let activeButton = null;
+
+let activeCommand = null;
+
+/*
+
+* Send command to Flask
+
+*/
+
+function sendCommand(command) {
+
+fetch(
+
+"/drive/" + command,
+
+{
+
+method: "POST"
+
+}
+
+)
+
+.catch(
+
+error => {
+
+console.error(error);
+
+}
+
+);
+
+}
+
+/*
+
+* START MOVEMENT
+
+*/
+
+function startMovement(button) {
+
+/*
+
+* IMPORTANT:
+
+*
+
+* If another button is already active,
+
+* ignore this press.
+
+*
+
+* This guarantees:
+
+*
+
+* forward + left
+
+*
+
+* cannot happen simultaneously.
+
+*/
+
+if (activeButton !== null) {
+
+return;
+
+}
+
+activeButton = button;
+
+activeCommand =
+
+button.dataset.command;
+
+button.classList.add("active");
+
+sendCommand(
+
+activeCommand
+
+);
+
+document
+
+.getElementById("status")
+
+.innerText =
+
+activeCommand.toUpperCase();
+
+}
+
+/*
+
+* STOP MOVEMENT
+
+*/
+
+function stopMovement(button) {
+
+/*
+
+* Only the currently active button
+
+* is allowed to stop the robot.
+
+*/
+
+if (button !== activeButton) {
+
+return;
+
+}
+
+button.classList.remove("active");
+
+activeButton = null;
+
+activeCommand = null;
+
+sendCommand("stop");
+
+document
+
+.getElementById("status")
+
+.innerText =
+
+"STOPPED";
+
+}
+
+const brushSwitch = document.getElementById("brushSwitch");
+
+let brushOn = false;
+
+brushSwitch.addEventListener("click", async () => {
+
+const newState = !brushOn;
+
+try {
+
+const response = await fetch(
+
+newState ? "/brush/on" : "/brush/off",
+
+{
+
+method: "POST"
+
+}
+
+);
+
+const data = await response.json();
+
+if (!data.success) {
+
+throw new Error(data.error || "Brush command failed");
+
+}
+
+brushOn = data.brush;
+
+brushSwitch.classList.toggle("on", brushOn);
+
+brushSwitch.setAttribute(
+
+"aria-pressed",
+
+brushOn ? "true" : "false"
+
+);
+
+} catch (error) {
+
+console.error("Brush error:", error);
+
+}
+
+});
+
+const pumpSwitch = document.getElementById("pumpSwitch");
+
+let pumpOn = true;
+
+pumpSwitch.addEventListener("click", async () => {
+
+const newState = !pumpOn;
+
+try {
+
+const response = await fetch(
+
+newState ? "/pump/on" : "/pump/off",
+
+{
+
+method: "POST"
+
+}
+
+);
+
+const data = await response.json();
+
+if (!data.success) {
+
+throw new Error(data.error || "Pump command failed");
+
+}
+
+pumpOn = data.pump;
+
+pumpSwitch.classList.toggle("on", pumpOn);
+
+pumpSwitch.setAttribute(
+
+"aria-pressed",
+
+pumpOn ? "true" : "false"
+
+);
+
+} catch (error) {
+
+console.error("Pump error:", error);
+
+}
+
+});
+
+/* =========================================================
+
+TOUCH / MOUSE EVENTS
+
+========================================================= */
+
+const buttons =
+
+document.querySelectorAll(".button");
+
+buttons.forEach(
+
+button => {
+
+/*
+
+* TOUCH / POINTER DOWN
+
+*/
+
+button.addEventListener(
+
+"pointerdown",
+
+event => {
+
+event.preventDefault();
+
+button.setPointerCapture(
+
+event.pointerId
+
+);
+
+startMovement(button);
+
+}
+
+);
+
+/*
+
+* POINTER UP
+
+*/
+
+button.addEventListener(
+
+"pointerup",
+
+event => {
+
+event.preventDefault();
+
+stopMovement(button);
+
+}
+
+);
+
+/*
+
+* POINTER CANCEL
+
+*/
+
+button.addEventListener(
+
+"pointercancel",
+
+event => {
+
+event.preventDefault();
+
+stopMovement(button);
+
+}
+
+);
+
+/*
+
+* POINTER LEAVES BUTTON
+
+*
+
+* Important for safety.
+
+*/
+
+button.addEventListener(
+
+"pointerleave",
+
+event => {
+
+if (
+
+event.buttons === 0
+
+) {
+
+stopMovement(button);
+
+}
+
+}
+
+);
+
+}
+
+);
+
+/* =========================================================
+
+EXTRA SAFETY
+
+========================================================= */
+
+/*
+
+* If browser loses focus,
+
+* stop the robot.
+
+*/
+
+window.addEventListener(
+
+"blur",
+
+() => {
+
+if (activeButton !== null) {
+
+activeButton
+
+.classList
+
+.remove("active");
+
+activeButton = null;
+
+activeCommand = null;
+
+sendCommand("stop");
+
+document
+
+.getElementById("status")
+
+.innerText =
+
+"STOPPED";
+
+}
+
+}
+
+);
+
+/*
+
+* If page is hidden,
+
+* stop the robot.
+
+*/
+
+document.addEventListener(
+
+"visibilitychange",
+
+() => {
+
+if (
+
+document.hidden &&
+
+activeButton !== null
+
+) {
+
+activeButton
+
+.classList
+
+.remove("active");
+
+activeButton = null;
+
+activeCommand = null;
+
+sendCommand("stop");
+
+}
+
+}
+
+);
+
+/* =========================================================
+
+SENSOR UPDATE
+
+========================================================= */
+
+async function updateSensors() {
+
+try {
+
+const response =
+
+await fetch("/sensors");
+
+const data =
+
+await response.json();
+
+/*
+
+* IMU
+
+*/
+
+document
+
+.getElementById("ax")
+
+.innerText =
+
+Number(data.imu.ax)
+
+.toFixed(2);
+
+document
+
+.getElementById("ay")
+
+.innerText =
+
+Number(data.imu.ay)
+
+.toFixed(2);
+
+document
+
+.getElementById("az")
+
+.innerText =
+
+Number(data.imu.az)
+
+.toFixed(2);
+
+document
+
+.getElementById("gx")
+
+.innerText =
+
+Number(data.imu.gx)
+
+.toFixed(2);
+
+document
+
+.getElementById("gy")
+
+.innerText =
+
+Number(data.imu.gy)
+
+.toFixed(2);
+
+document
+
+.getElementById("gz")
+
+.innerText =
+
+Number(data.imu.gz)
+
+.toFixed(2);
+
+/*
+
+* TOF
+
+*/
+
+document
+
+.getElementById("tof")
+
+.innerText =
+
+Number(data.tof.distance)
+
+.toFixed(0)
+
++ " mm";
+
+}
+
+catch (error) {
+
+console.error(
+
+"Sensor error:",
+
+error
+
+);
+
+}
+
+}
+
+/*
+
+* Update sensors 10 times/sec
+
+*/
+
+setInterval(
+
+updateSensors,
+
+100
+
+);
+
+updateSensors();
+
+</script>
+
+</body>
+
+</html>
